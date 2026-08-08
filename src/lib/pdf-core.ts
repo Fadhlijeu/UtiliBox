@@ -89,3 +89,29 @@ export const splitPdfByRanges = async (
   }
   return out;
 };
+
+export type ImageMime = "image/jpeg" | "image/png";
+
+const sniffImageMime = (bytes: Uint8Array): ImageMime => {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  throw new Error("unsupported image format (jpg/png only)");
+};
+
+/** Embed a JPEG/PNG image as a single page PDF. */
+export const imageToPdf = async (bytes: Uint8Array): Promise<Uint8Array> => {
+  const mime = sniffImageMime(bytes);
+  const doc = await PDFDocument.create();
+  const img = mime === "image/png" ? await doc.embedPng(toPdfBytes(bytes)) : await doc.embedJpg(toPdfBytes(bytes));
+  const w = img.width;
+  const h = img.height;
+  const maxW = 595; // A4 portrait content width
+  const scale = w > maxW ? maxW / w : 1;
+  const pw = Math.max(1, Math.floor(w * scale));
+  const ph = Math.max(1, Math.floor(h * scale));
+  const page = doc.addPage([pw, ph]);
+  page.drawImage(img, { x: 0, y: 0, width: pw, height: ph });
+  return doc.save();
+};
+
+export { sniffImageMime as _sniffImageMime };
