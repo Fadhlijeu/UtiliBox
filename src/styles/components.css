@@ -183,3 +183,51 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 .status-dot--idle    { background: var(--color-paper-4); }
 .status-dot--success { background: var(--color-success); }
 .status-dot--error   { background: var(--color-error); }
+
+/* ── text input ─────────────────────── */
+
+.input {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-paper-1);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+
+.input:focus { outline: 2px solid var(--color-focus); outline-offset: 0; }
+
+.btn--sm { padding: var(--space-1) var(--space-2); font-size: var(--text-xs); }
+
+/* ── file list ───────────────────────── */
+
+.file-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-paper-1);
+  font-size: var(--text-sm);
+}
+
+.file-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}

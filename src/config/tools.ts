@@ -87,6 +87,8 @@ export const loadToolModule = async (
       return import("../tools/json/index");
     case "base64":
       return import("../tools/base64/index");
+    case "pdf-organizer":
+      return import("../tools/pdf-organizer/index");
     default:
       throw new Error("not-implemented: " + id);
   }

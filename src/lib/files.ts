@@ -17,6 +17,13 @@ export const downloadBlob = (
 export const downloadText = (text: string, filename: string, mime = "text/plain"): void =>
   downloadBlob(new Blob([text], { type: mime }), filename);
 
+/** Byte-accurate download; central place for the BlobPart cast. */
+export const downloadBytes = (
+  bytes: Uint8Array,
+  filename: string,
+  mime = "application/octet-stream"
+): void => downloadBlob(new Blob([bytes.buffer as ArrayBuffer], { type: mime }), filename);
+
 export const copyText = async (text: string): Promise<boolean> => {
   try {
     await navigator.clipboard.writeText(text);
