@@ -1,8 +1,10 @@
 # UtiliBox
 
-The personal utility toolkit — 30+ browser-based tools, deployed on GitHub Pages.
+The personal utility toolkit — 30+ browser-based tools, deployed on [GitHub Pages](https://fadhlijeu.github.io/UtiliBox/).
 
-> **Status: Planning phase.** All specs live in [`workflows/`](workflows/).
+> **Status: M0 done** — shell, router, design system, CI live. 2/31 tools shipped (base64, JSON). Roadmap: [workflows/11_milestones.md](workflows/11_milestones.md).
+
+[![CI](https://github.com/Fadhlijeu/UtiliBox/actions/workflows/ci.yml/badge.svg)](https://github.com/Fadhlijeu/UtiliBox/actions/workflows/ci.yml)
 
 ## Tools
 
@@ -32,8 +34,19 @@ The personal utility toolkit — 30+ browser-based tools, deployed on GitHub Pag
 
 ## Tech
 
-- Vite + vanilla TypeScript
-- GitHub Actions → GitHub Pages
+- Vite + vanilla TypeScript (strict mode)
+- GitHub Actions → GitHub Pages (CI: lint, typecheck, vitest, build)
+- Hash router (`#/tool/:id`) + lazy-loaded tool chunks
 - Client-first processing (pdf-lib, PDF.js, ffmpeg.wasm, Tesseract.js, transformers.js)
 - HuggingFace Spaces for heavy OCR (baidu/Unlimited-OCR)
 - BYOK for AI features (Gemini / OpenAI-compatible)
+
+## Dev
+
+```bash
+npm install
+npm run dev        # local dev server
+npm run test       # vitest
+npm run lint       # eslint + tsc --noEmit
+npm run build      # tsc + vite build → dist/
+```

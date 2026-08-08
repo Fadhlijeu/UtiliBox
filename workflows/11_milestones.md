@@ -3,13 +3,14 @@
 
 ---
 
-## M0 — Fondasi (hari 1-3)
-- Scaffold Vite + TS + router hash + design tokens (`tokens.css`) 
-- Shell UI: header/search (⌘K), kategori, grid home, footer
-- Tool registry (`config/tools.ts`) + lazy loading per tool + empty state
-- Shared components: dropzone, toast, progress, download, copy
-- CI: GitHub Actions (lint + vitest + build + deploy)
-- **Checkpoint**: deploy awal di Pages, 2 tool skeleton jalan.
+## M0 — Fondasi (hari 1-3) ✅ DONE (commit e470e95, ad62302)
+- Scaffold Vite + TS + router hash + design tokens (`tokens.css`) ✅
+- Shell UI: header/search (⌘K), kategori, grid home, footer ✅
+- Tool registry (`config/tools.ts`) + lazy loading per tool + empty state ✅
+- Shared components: dropzone, toast, progress, download, copy ✅
+- CI: GitHub Actions (lint + vitest + build + deploy) ✅ hijau
+- **Checkpoint**: deploy awal **live** https://fadhlijeu.github.io/UtiliBox/ ✅
+  2 tool jalan (base64 + json), test 9/9, lint+typecheck bersih.
 
 ## M1 — Documents core (hari 4-9)
 - PDF: merge, split (range/extract), organize grid (drag reorder, delete, rotate)
