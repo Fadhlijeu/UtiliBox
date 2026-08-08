@@ -1,0 +1,100 @@
+/* ============================================================
+   UtiliBox · Design Tokens
+   Source: workflows/09_ui_design_system.md
+   Hallmark · genre: modern-minimal · tone: utilitarian-tech
+   ============================================================ */
+
+:root {
+  /* ── PAPER ── */
+  --color-paper-base:  oklch(98% 0.003 250);
+  --color-paper-1:     oklch(96% 0.004 250);
+  --color-paper-2:     oklch(92% 0.005 250);
+  --color-paper-3:     oklch(88% 0.006 250);
+  --color-paper-4:     oklch(84% 0.007 250);
+  --color-border:      oklch(88% 0.006 250);
+  --color-border-strong: oklch(80% 0.008 250);
+
+  /* ── Ink ──────────────────── */
+  --color-ink:         oklch(18% 0.01 255);
+  --color-ink-2:       oklch(38% 0.01 255);
+  --color-ink-muted:   oklch(55% 0.008 255);
+
+  /* ── Accent ───────────────── */
+  --color-accent:        oklch(70% 0.15 75);
+  --color-accent-ink:    oklch(22% 0.03 75);
+  --color-accent-dim:    oklch(70% 0.15 75 / 0.14);
+  --color-accent-strong: oklch(63% 0.16 75);
+  --color-focus:         oklch(66% 0.16 75);
+
+  /* ── Semantic ─────────────── */
+  --color-success: oklch(62% 0.14 152);
+  --color-error:   oklch(55% 0.21 27);
+  --color-warning: oklch(72% 0.15 80);
+  --color-info:    oklch(62% 0.13 240);
+
+  /* ── Type ─────────────────── */
+  --font-display: "Inter", system-ui, sans-serif;
+  --font-body:    "Inter", system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+
+  --text-2xs: 11px;
+  --text-xs:  12px;
+  --text-sm:  13px;
+  --text-base: 14px;
+  --text-md:  16px;
+  --text-lg:  20px;
+  --text-xl:  24px;
+  --text-2xl: 32px;
+  --text-3xl: 40px;
+
+  /* ── Spacing (8px grid, plus 4) ── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ── Radius ──────────────── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* ── Shadows ─────────────── */
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.06);
+  --shadow-md: 0 2px 8px oklch(0% 0 0 / 0.08);
+  --shadow-lg: 0 4px 20px oklch(0% 0 0 / 0.10);
+
+  /* ── Motion tokens ───────── */
+  --duration-fast:   120ms;
+  --duration-normal: 160ms;
+  --ease-standard:   cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ── Dark mode (sejak awal) ───────────── */
+[data-theme="dark"] {
+  --color-paper-base: oklch(15% 0.008 255);
+  --color-paper-1:    oklch(19% 0.010 255);
+  --color-paper-2:    oklch(24% 0.012 255);
+  --color-paper-3:    oklch(30% 0.010 255);
+  --color-paper-4:    oklch(36% 0.010 255);
+  --color-border:     oklch(28% 0.012 255);
+  --color-border-strong: oklch(38% 0.014 255);
+
+  --color-ink:        oklch(95% 0.004 255);
+  --color-ink-2:      oklch(74% 0.008 255);
+  --color-ink-muted:  oklch(58% 0.010 255);
+
+  --color-accent:      oklch(76% 0.15 75);
+  --color-accent-ink:  oklch(15% 0.02 75);
+  --color-accent-dim:  oklch(76% 0.15 75 / 0.16);
+  --color-accent-strong: oklch(82% 0.14 75);
+
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.4);
+  --shadow-md: 0 2px 8px oklch(0% 0 0 / 0.5);
+  --shadow-lg: 0 4px 20px oklch(0% 0 0 / 0.6);
+}
