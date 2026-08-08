@@ -70,7 +70,10 @@
 
 /* ── Home ─────────────────────────── */
 
-.tool-category { margin-bottom: var(--space-10); }
+.tool-category {
+  margin: 0 0 var(--space-10);
+  padding-top: var(--space-10);
+}
 
 .tool-category__title {
   display: flex;
