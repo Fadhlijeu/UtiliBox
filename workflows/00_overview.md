@@ -41,7 +41,7 @@ Prinsip utama:
 ### 📄 Documents & Files
 1. Convert dokumen (PDF ↔ Word ↔ Excel ↔ TXT ↔ Markdown)
 2. Compress dokumen & gambar
-3. Document editor (split, merge, delete, reorder pages, drag-n-move)
+3. Document editor (split, merge, delete, reorder pages, drag-n-move) — merge berlaku untuk PDF **dan** dokumen lain
 4. OCR (scan gambar jadi teks)
 5. File encryption/decryption (AES, RSA)
 6. Metadata remover/checker (foto/video)
@@ -51,7 +51,7 @@ Prinsip utama:
 8. Remove background
 9. Convert image format (JPG ↔ PNG ↔ HEIC ↔ WebP)
 10. Image resize & crop
-11. Convert video ↔ GIF ↔ anything
+11. Convert video ↔ GIF (dua arah) + video converter
 12. Audio converter (MP3 ↔ WAV ↔ OGG)
 13. Media downloader (TikTok, IG, YouTube, X — support username, story, highlight, profile scraping)
 

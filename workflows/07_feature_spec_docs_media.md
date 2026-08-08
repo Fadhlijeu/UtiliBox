@@ -25,15 +25,15 @@
 - **Acceptance**: memory crash test 100MB PDF (worker), output terbuka di pdf viewer.
 - **P0**.
 
-### 3. PDF Editor (split, merge, delete, reorder, drag-n-move)
+### 3. Merge & Split (PDF editor: split, merge, delete, reorder, drag-n-move)
 - **Vue** iLovePDF-style: 
-  - Merge: multi-PDF + gambar (JPG/PNG → halaman PDF, user #7: YES), drag-order list before merge.
+  - Merge: multi-PDF + gambar (JPG/PNG → halaman PDF, user #7: YES) + **dokumen umum (TXT/MD → halaman teks, DOCX via convert)** — merge berlaku dua arah: semua format jadi satu PDF, drag-order list before merge.
   - Split: by range (input format "1-3,5"), extract each page file, split every N pages. ⚠️ bookmarks split P2.
   - Organize: **grid thumbnail tiap halaman** — click select multi → delete; **drag-n-drop reorder**; **insert blank page**; rotate per page; zoom preview.
 - **Engine**: pdf-lib + pdf.js render pages to canvas; worker (off-main) untuk render.
 - **Tidak termasuk (keputusan user)**: watermark editor (#8: tanpa), PDF sign (#9: tanpa).
 - **Additional P1**: crop per-page, page numbers.
-- **Acceptance**: 200-page doc: reorder 50 pages < 3s (render) + hasil valid; undo berfungsi.
+- **Acceptance**: 200-page doc: reorder 50 pages < 3s (render) + hasil valid; undo berfungsi; merge (PDF+PDF, PDF+TXT, PDF+gambar) output valid.
 - **P0** untuk merge/split/organize dasar.
 
 ### 3. OCR — Image/PDF → Teks
@@ -89,12 +89,12 @@
 - Usability: before/after preview, ao include **"resize by dims" matrix.
 - **P0**.
 
-### 4. Video → GIF (+ video converter)
-- Step 1: upload/reel clip; set start/end time (range max 60s), fps (2-30), loop (yes/no), size limit 200MB.
-- Step 2: **resize/crop** hasil GIF; effects (speed, reverse); optimize (frame skip).
+### 4. Video ↔ GIF (dua arah)
+- **Video → GIF**: upload/reel clip; set start/end time (range max 60s), fps (2-30), loop (yes/no), size limit 200MB; resize/crop hasil; effects (speed, reverse); optimize (frame skip).
+- **GIF → Video**: upload GIF → konversi ke mp4/webm (fps/aspek dari GIF, opsional loop repeat ×N), via ffmpeg.wasm.
 - **Tambahan (fastpass)**: video converter dasar mp4/webm/mov (+ audio extract) via ffmpeg.wasm — **lazy load & warning durasi ≤ 10 menit** (batas memori).
-- **Acceptance**: GIF output = loop right; fps sesuai; test 30s clip OK; worker.
-- **P1** (converter), P0 (video-to-GIF kualitas dasar).
+- **Acceptance**: GIF output = loop right; fps sesuai; test 30s clip OK; GIF→video berhasil (mp4 playable); worker.
+- **P1** (converter), P0 (video↔GIF kualitas dasar).
 
 ### 5. Audio Converter (MP3/WAV/OGG/M4A/FLAC)
 - Format list (12+), params: bitrate, sample rate, channels; **trim & fade opsional**; batch 5 files; strip metadata (opsional).

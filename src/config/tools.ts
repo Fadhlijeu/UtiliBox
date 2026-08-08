@@ -33,7 +33,7 @@ export const TOOLS: ToolMeta[] = [
   // ── Documents & Files ────────────────────────────────
   { id: "pdf-convert", title: "Convert Document", description: "Convert documents between formats", category: "documents", icon: "swap_horiz", tier: "P0" },
   { id: "pdf-compress", title: "Compress", description: "Reduce PDF & image file size", category: "documents", icon: "compress", tier: "P0" },
-  { id: "pdf-organizer", title: "PDF Organizer", description: "Split, merge, reorder & delete pages", category: "documents", icon: "auto_stories", tier: "P0" },
+  { id: "pdf-organizer", title: "Merge & Split", description: "Merge, split, reorder & delete pages", category: "documents", icon: "auto_stories", tier: "P0" },
   { id: "ocr", title: "OCR", description: "Extract text from images & PDFs", category: "documents", icon: "text_snippet", tier: "P0" },
   { id: "encrypt", title: "Encryption", description: "Encrypt & decrypt files", category: "documents", icon: "enhanced_encryption", tier: "P1" },
   { id: "metadata", title: "Metadata", description: "View & strip photo metadata", category: "documents", icon: "info", tier: "P0" },
@@ -43,7 +43,7 @@ export const TOOLS: ToolMeta[] = [
   { id: "remove-bg", title: "Remove Background", description: "AI background removal", category: "media", icon: "cut", tier: "P0" },
   { id: "image-convert", title: "Image Converter", description: "Convert between image formats", category: "media", icon: "image_search", tier: "P0" },
   { id: "image-resize", title: "Resize & Crop", description: "Resize, crop & aspect presets", category: "media", icon: "crop", tier: "P0" },
-  { id: "video-gif", title: "Video → GIF", description: "Turn video clips into GIF", category: "media", icon: "gif_box", tier: "P1" },
+  { id: "video-gif", title: "Video ↔ GIF", description: "Convert video to GIF and back", category: "media", icon: "gif_box", tier: "P1" },
   { id: "audio-convert", title: "Audio Converter", description: "Convert between audio formats", category: "media", icon: "graphic_eq", tier: "P1" },
   { id: "media-downloader", title: "Media Downloader", description: "Download HD media from popular platforms", category: "media", icon: "download", tier: "P0" },
 

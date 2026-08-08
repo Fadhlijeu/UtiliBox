@@ -21,7 +21,7 @@
 |----|-------------|----------|
 | F-10 | Konversi dokumen PDF ↔ Word/Excel/TXT/Markdown (client-side PDF.js + libs) | P0 |
 | F-11 | Kompresi PDF & gambar (kualitas preset, target size, DPI) | P0 |
-| F-12 | PDF editor: merge, split (range, ekstrak per halaman), delete, reorder (drag-n-drop), rotate, crop, watermark, page numbers | P0 |
+| F-12 | PDF editor: merge, split (range, ekstrak per halaman), delete, reorder (drag-n-drop), rotate, crop, watermark, page numbers — merge berlaku dua arah: multi-PDF **dan** dokumen (Word/TXT gambar) jadi satu file | P0 |
 | F-13 | OCR gambar/PDF → teks (2 tier: Tesseract.js lokal + Unlimited-OCR via HF Spaces) | P0 |
 | F-14 | Enkripsi/dekripsi file AES-256 (Web Crypto API) + RSA (openpgp.js) | P1 |
 | F-15 | Metadata viewer/remover untuk foto & video (EXIF strip: GPS, kamera, tanggal, thumbnail) | P0 |
@@ -34,7 +34,7 @@
 | F-20 | Remove background: AI (remove.bg-style; opsi local lib u2net-onnx / rimraf / bgremover; fallback API) | P0 |
 | F-21 | Konversi format gambar JPG/PNG/HEIC/WebP/GIF/BMP/TIFF/SVG/AVIF | P0 |
 | F-22 | Resize & crop (preset social media, aspect lock, pixel/%, target file size) | P0 |
-| F-23 | Video → GIF (klip rentang waktu, fps, resize, loop) + video/audio converter dasar | P1 |
+| F-23 | Video ↔ GIF dua arah: video→GIF (klip rentang waktu, fps, resize, loop) + GIF→video (video converter dasar) | P1 |
 | F-24 | Audio converter MP3/WAV/OGG/M4A/FLAC (FFmpeg WASM) | P1 |
 | F-25 | Media downloader: TikTok (HD tanpa watermark via tikdownloader.io API), IG (post/reel/story/highlight/profile), YouTube (via API/service), X (via API/service) | P0 |
 
