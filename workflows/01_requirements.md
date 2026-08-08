@@ -82,6 +82,10 @@
 | F-61 | Output preview sebelum download: semua hasil operasi masuk ke `output-panel.ts` (Preview terintegrasi: PDF via iframe, image/video/audio/tex) — "seperti git commit sebelum push", tidak direct-download | P0 |
 | F-62 | Search global & tombol navigasi: search global hanya di home; halaman tool menampilkan back-link "All tools" | P0 |
 | F-63 | Semua tombol fitur tool selalu terlihat (tidak hilang saat mode lain aktif) | P0 |
+| F-64 | Tool-shell: setiap tool multi-fungsi punya tab fitur di top bar (`ToolShell`, feature = tab); hanya fitur aktif yang terlihat; hasil tampil di **view terpisah** ("Result") dengan tombol Back | P0 |
+| F-65 | Undo/Redo/Reset di top bar shell: tiap langkah mutable (mis. delete halaman) push `HistoryCmd` — Undo/Redo jalan, Reset mengosongkan history + hasil + state tool (file dilepas) | P0 |
+| F-66 | Handoff "oper file": output bisa dikirim ke tool/fitur lain lewat menu Send-to (filter MIME, tanpa self-loop); receiver punya intake (`takeHandoff`) — antar fitur tool sama & antar tool | P0 |
+| F-67 | Tombol aksi contextual disabled (bukan hilang): mis. Split aktif hanya saat tepat 1 PDF; Merge aktif saat ≥2 file; hint teks selalu memberi tahu syarat | P0 |
 
 ---
 

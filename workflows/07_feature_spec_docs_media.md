@@ -32,6 +32,7 @@
   - Organize: **grid thumbnail tiap halaman** — click select multi → delete; **drag-n-drop reorder**; (P1) insert blank page; rotate per page; zoom preview.
 - **Engine**: pdf-lib + pdf.js render pages to canvas; worker (off-main) render. ⚠️ pdfjs selalu menerima **copy** buffer (`new Uint8Array(bytes)`) — jangan pernah pakai buffer yang sama dengan pdf-lib (terdetach → "Cannot perform Construct").
 - **Progress & preview wajib (F-58–F-61)**: spinner/bar `busy()` pada semua operasi; hasil masuk `output-panel.ts` (Preview iframe/reframe sebelum download, mirip git commit → push). Semua tombol fitur selalu terlihat.
+- **Tool-shell (F-64–F-67)**: tab fitur top bar (`Merge`/`Split`/`Organize`), hasil di view terpisah, Undo/Redo/Reset, handoff `Send-to` antar fitur/tool, tombol aksi disabled-contextual dengan hint.
 - **Tidak termasuk (keputusan user)**: watermark editor (#8: tanpa), PDF sign (#9: tanpa).
 - **Additional P1**: crop per-page, page numbers.
 - **Acceptance**: 200-page doc: reorder 50 pages < 3s (render) valid; merge (PDF+PDF, PDF+TXT, PDF+gambar) output valid; delete selected pages benar; undo berfungsi.

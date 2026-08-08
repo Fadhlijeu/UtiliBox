@@ -1,11 +1,11 @@
 ﻿import { clear, el, readFileAsArrayBuffer } from "../../lib/dom";
 import { dropzone } from "../../components/dropzone";
 import { toast } from "../../components/toast";
-import { busy } from "../../components/busy";
-import { outputPanel } from "../../components/output-panel";
-import { blobFromBytes, formatBytes } from "../../lib/files";
+import { ToolShell, type Feature, type FeatureCtx } from "../../components/tool-shell";
 import { fileThumb, pdfPageThumbs } from "../../lib/thumb";
+import { formatBytes, blobFromBytes } from "../../lib/files";
 import { mergePdfs, splitPdfByRanges, extractPages, validatePdf, imageToPdf } from "../../lib/pdf-core";
+import { takeHandoff } from "../../lib/handoff";
 
 type Kind = "pdf" | "image";
 
@@ -18,83 +18,68 @@ interface Entry {
 }
 
 const entries: Entry[] = [];
+const listeners: Array<() => void> = [];
+
+const noopBusy = (): FeatureCtx["busy"] => ({
+  node: el("div"),
+  spin: () => void 0,
+  progress: () => void 0,
+  done: () => void 0
+});
 
 const isImage = (f: File): boolean => /\.(png|jpe?g)$/i.test(f.name);
-const pdfLib = (): Promise<typeof import("pdf-lib")> => import("pdf-lib");
 const sniffKind = (f: File): Kind => (isImage(f) ? "image" : "pdf");
+const pdflib = (): Promise<typeof import("pdf-lib")> => import("pdf-lib");
 
-export const mount = (root: HTMLElement): void => {
-  clear(root);
+const emitChange = () => listeners.forEach((l) => l());
+const onEntriesChange = (l: () => void): void => {
+  listeners.push(l);
+};
 
+// ── shared entry helpers ─────────────────────────────
+const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<void> => {
+  const b = ctx.busy;
+  b.spin("Reading files…");
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      b.progress(i / files.length, `Reading ${i + 1}/${files.length}`);
+      const kind = sniffKind(f);
+      if (kind === "image") {
+        entries.push({ file: f, data: new Uint8Array(await readFileAsArrayBuffer(f)), pages: 1, kind });
+        continue;
+      }
+      if (!/\.pdf$/i.test(f.name)) {
+        toast(`Skipped (not PDF/image): ${f.name}`, "error");
+        continue;
+      }
+      const data = new Uint8Array(await readFileAsArrayBuffer(f));
+      if (!(await validatePdf(data))) {
+        toast(`Invalid PDF: ${f.name}`, "error");
+        continue;
+      }
+      const { PDFDocument } = await pdflib();
+      entries.push({ file: f, data, pages: (await PDFDocument.load(data)).getPageCount(), kind });
+    }
+  } finally {
+    b.done();
+    emitChange();
+  }
+};
+
+const removeEntry = (i: number): void => {
+  entries[i].dispose?.();
+  entries.splice(i, 1);
+  emitChange();
+};
+
+const pdfEntry = (): Entry | undefined => entries.find((e) => e.kind === "pdf");
+const pdfCount = (): number => entries.filter((e) => e.kind === "pdf").length;
+const totalSize = (): number => entries.reduce((s, e) => s + e.file.size, 0);
+
+const fileListEl = (): HTMLElement => {
   const list = el("ul", { class: "file-list" });
-  const status = el("span", { class: "muted" });
-  const rangeInput = el("input", { type: "text", class: "input", placeholder: "e.g. 1-3,5,8" });
-  const progress = busy();
-  const out = outputPanel();
-
-  // ── page grid (single PDF view) ──────────────────
-  const gridWrap = el("div", { class: "page-grid" });
-  const selected = new Set<number>();
-
-  const refreshGrid = async () => {
-    selected.clear();
-    const pdfEntry = entries.find((e) => e.kind === "pdf");
-    if (!pdfEntry) {
-      gridWrap.replaceChildren(
-        el("div", { class: "page-grid__placeholder" }, [
-          el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["preview"]),
-          el("p", {}, ["Add a single PDF to see page thumbnails, delete pages & split."])
-        ])
-      );
-      return;
-    }
-    gridWrap.replaceChildren();
-    rangeInput.value = `1-${pdfEntry.pages}`;
-    progress.spin("Rendering page thumbnails…");
-    try {
-      await pdfPageThumbs(pdfEntry.data, (canvas, index) => {
-        const box = el("button", { class: "page-cell", type: "button", "data-page": String(index) }, [canvas]);
-        box.appendChild(el("span", { class: "page-cell__no" }, [String(index)]));
-        box.addEventListener("click", () => {
-          if (selected.has(index)) selected.delete(index);
-          else selected.add(index);
-          box.classList.toggle("page-cell--selected", selected.has(index));
-        });
-        gridWrap.appendChild(box);
-      });
-    } catch {
-      gridWrap.replaceChildren(el("p", { class: "muted" }, ["Failed to render page previews."]));
-    } finally {
-      progress.done();
-    }
-  };
-
-  const deleteSelected = async () => {
-    const pdfEntry = entries.find((e) => e.kind === "pdf");
-    if (!pdfEntry || !selected.size) return;
-    const keep = Array.from({ length: pdfEntry.pages }, (_, i) => i + 1).filter((p) => !selected.has(p));
-    if (!keep.length) return toast("Cannot delete every page", "error");
-    progress.spin("Deleting pages…");
-    try {
-      pdfEntry.data = await extractPages(pdfEntry.data, keep.map((p) => p - 1));
-      pdfEntry.pages = keep.length;
-      out.clear();
-      await refreshGrid();
-      zebra();
-      toast(`Deleted ${selected.size} page(s)`, "success");
-    } catch (err) {
-      toast(`Delete failed: ${err instanceof Error ? err.message : err}`, "error");
-    } finally {
-      progress.done();
-    }
-  };
-
-  // ── file list ────────────────────────────────────
-  const zebra = () => {
-    const count = entries.length;
-    status.textContent = count
-      ? `${count} file(s) · ${formatBytes(entries.reduce((s, e) => s + e.file.size, 0))}`
-      : "No files yet";
+  const render = () => {
     list.replaceChildren(
       ...entries.map((e, i) => {
         const row = el("li", { class: "file-row" }, [
@@ -113,130 +98,273 @@ export const mount = (root: HTMLElement): void => {
         return row;
       })
     );
-    void refreshGrid();
+    if (!entries.length) {
+      list.appendChild(
+        el("p", { class: "muted" }, ["No files yet — drop files below."])
+      );
+    }
   };
-
   list.addEventListener("click", (ev) => {
     const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>("[data-remove]");
-    if (!btn) return;
-    const i = Number(btn.dataset.remove);
-    entries[i].dispose?.();
-    entries.splice(i, 1);
-    zebra();
+    if (btn) removeEntry(Number(btn.dataset.remove));
+  });
+  onEntriesChange(render);
+  render();
+  return list;
+};
+
+const dropzoneEl = (ctx: FeatureCtx, hint: string): HTMLElement =>
+  dropzone({
+    label: "Add PDFs & images",
+    hint,
+    multiple: true,
+    accept: ".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg",
+    onFiles: (fs) => void addFiles(fs, ctx)
   });
 
-  // ── add files ────────────────────────────────────
-  const addFiles = async (files: File[]) => {
-    progress.spin("Reading files…");
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        progress.progress(i / files.length, `Reading ${i + 1}/${files.length}`);
-        const kind = sniffKind(f);
-        if (kind === "image") {
-          entries.push({ file: f, data: new Uint8Array(await readFileAsArrayBuffer(f)), pages: 1, kind });
-          continue;
-        }
-        if (!f.name.toLowerCase().endsWith(".pdf")) {
-          toast(`Skipped (not PDF/image): ${f.name}`, "error");
-          continue;
-        }
-        const data = new Uint8Array(await readFileAsArrayBuffer(f));
-        if (!(await validatePdf(data))) {
-          toast(`Invalid PDF: ${f.name}`, "error");
-          continue;
-        }
-        const { PDFDocument } = await pdfLib();
-        entries.push({ file: f, data, pages: (await PDFDocument.load(data)).getPageCount(), kind });
-      }
-    } finally {
-      progress.done();
-      zebra();
-    }
-  };
+// ── Features ──────────────────────────────────────────
 
-  // ── actions ──────────────────────────────────────
-  const runMerge = async () => {
-    if (!entries.length) return toast("Add at least one file", "error");
-    const btn = root.querySelector<HTMLButtonElement>("#do-merge")!;
-    btn.disabled = true;
-    progress.spin("Merging…");
-    try {
-      const parts: Uint8Array[] = [];
-      for (let i = 0; i < entries.length; i++) {
-        const e = entries[i];
-        progress.progress(i / entries.length, `Preparing ${i + 1}/${entries.length}`);
-        parts.push(e.kind === "pdf" ? e.data : await imageToPdf(e.data));
-      }
-      progress.progress(0.95, "Assembling PDF");
-      const outBytes = await mergePdfs(parts);
-      const name = entries.length === 1 ? entries[0].file.name.replace(/\.(pdf|png|jpe?g)$/i, "") : "merged";
-      out.show([{ name: `${name}.pdf`, blob: blobFromBytes(outBytes, "application/pdf"), mime: "application/pdf" }]);
-      toast("Merge ready — preview & download below", "success");
-    } catch (err) {
-      toast(`Merge failed: ${err instanceof Error ? err.message : err}`, "error");
-    } finally {
-      btn.disabled = false;
-      progress.done();
-    }
-  };
+const mergeFeature: Feature = {
+  id: "merge",
+  label: "Merge",
+  mount(host, ctx) {
+    const status = el("span", { class: "muted" });
+    const mergeBtn = el("button", { class: "btn btn--primary", type: "button" }, [
+      el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["merge"]),
+      "Merge into one PDF"
+    ]);
+    const sync = () => {
+      const n = entries.length;
+      status.textContent = n
+        ? `${n} file(s) · ${formatBytes(totalSize())}`
+        : "No files yet — merge needs 2+";
+      mergeBtn.disabled = n < 2;
+    };
 
-  const runSplit = async () => {
-    const pdfEntry = entries.find((e) => e.kind === "pdf");
-    if (!pdfEntry) return toast("Split needs exactly one PDF (add a single PDF)", "error");
-    const btn = root.querySelector<HTMLButtonElement>("#do-split")!;
-    btn.disabled = true;
-    progress.spin("Splitting…");
-    try {
-      const parts = await splitPdfByRanges(pdfEntry.data, rangeInput.value);
-      const base = pdfEntry.file.name.replace(/\.pdf$/i, "");
-      out.show(
-        parts.map((p, i) => ({
-          name: `${base}-part-${i + 1}.pdf`,
-          blob: blobFromBytes(p, "application/pdf"),
+    mergeBtn.addEventListener("click", async () => {
+      if (entries.length < 2) return toast("Merge needs at least 2 files", "error");
+      mergeBtn.disabled = true;
+      ctx.busy.spin("Merging…");
+      try {
+        const parts: Uint8Array[] = [];
+        for (let i = 0; i < entries.length; i++) {
+          const e = entries[i];
+          ctx.busy.progress(i / entries.length, `Preparing ${i + 1}/${entries.length}`);
+          parts.push(e.kind === "pdf" ? e.data : await imageToPdf(e.data));
+        }
+        ctx.busy.progress(0.95, "Assembling PDF");
+        const out = await mergePdfs(parts);
+        ctx.showResult([
+          {
+            name: `${entries.length === 1 ? entries[0].file.name.replace(/\.(pdf|png|jpe?g)$/i, "") : "merged"}.pdf`,
+            blob: blobFromBytes(out, "application/pdf"),
+            mime: "application/pdf"
+          }
+        ]);
+        toast("Merge ready — preview below", "success");
+      } catch (e) {
+        toast(`Merge failed: ${e instanceof Error ? e.message : e}`, "error");
+      } finally {
+        mergeBtn.disabled = entries.length < 2;
+        ctx.busy.done();
+      }
+    });
+
+    onEntriesChange(sync);
+    sync();
+    host.append(
+      el("p", { class: "tool-desc" }, ["Combine several PDFs & images into a single PDF."]),
+      dropzoneEl(ctx, "2+ files needed — PDF, PNG, JPG"),
+      fileListEl(),
+      status,
+      el("div", { class: "row gap" }, [mergeBtn])
+    );
+  }
+};
+
+const splitFeature: Feature = {
+  id: "split",
+  label: "Split",
+  mount(host, ctx) {
+    const rangeInput = el("input", { type: "text", class: "input", placeholder: "e.g. 1-3,5,8" });
+    const splitBtn = el("button", { class: "btn", type: "button" }, [
+      el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["content_cut"]),
+      "Split PDF"
+    ]);
+    const pdf = pdfEntry();
+    if (pdf) rangeInput.value = `1-${pdf.pages}`;
+
+    const sync = () => {
+      const one = pdfCount() === 1;
+      splitBtn.disabled = !one;
+    };
+
+    splitBtn.addEventListener("click", async () => {
+      const pdf = pdfEntry();
+      if (!pdf) return toast("Split needs exactly one PDF", "error");
+      splitBtn.disabled = true;
+      ctx.busy.spin("Splitting…");
+      try {
+        const parts = await splitPdfByRanges(pdf.data, rangeInput.value);
+        const base = pdf.file.name.replace(/\.pdf$/i, "");
+        ctx.showResult(
+          parts.map((p, i) => ({
+            name: `${base}-part-${i + 1}.pdf`,
+            blob: blobFromBytes(p, "application/pdf"),
+            mime: "application/pdf"
+          }))
+        );
+        toast(`${parts.length} part(s) ready`, "success");
+      } catch (e) {
+        toast(`Split failed: ${e instanceof Error ? e.message : e}`, "error");
+      } finally {
+        sync();
+        ctx.busy.done();
+      }
+    });
+
+    onEntriesChange(sync);
+    sync();
+    host.append(
+      el("p", { class: "tool-desc" }, ["Split one PDF by ranges, e.g. “1-3,5,8-9”."]),
+      dropzoneEl(ctx, "exactly 1 PDF"),
+      fileListEl(),
+      el("div", { class: "row gap" }, [el("span", { class: "muted" }, ["Split by"]), rangeInput, splitBtn])
+    );
+  }
+};
+
+const organizeFeature: Feature = {
+  id: "organize",
+  label: "Organize",
+  mount(host, ctx) {
+    const gridWrap = el("div", { class: "page-grid" });
+    const selected = new Set<number>();
+    const deleteBtn = el("button", { class: "btn btn--danger", type: "button", disabled: "" }, [
+      "Delete selected pages"
+    ]);
+    const saveBtn = el("button", { class: "btn btn--primary", type: "button", disabled: "" }, [
+      "Save organized PDF"
+    ]);
+
+    const renderGrid = async () => {
+      selected.clear();
+      deleteBtn.disabled = true;
+      const pdf = pdfEntry();
+      if (!pdf) {
+        gridWrap.replaceChildren(
+          el("div", { class: "page-grid__placeholder" }, [
+            el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["preview"]),
+            el("p", {}, ["Add exactly one PDF to organize its pages."])
+          ])
+        );
+        saveBtn.disabled = true;
+        return;
+      }
+      saveBtn.disabled = false;
+      ctx.busy.spin("Rendering page thumbnails…");
+      try {
+        gridWrap.replaceChildren();
+        await pdfPageThumbs(pdf.data, (canvas, index) => {
+          const box = el("button", { class: "page-cell", type: "button", "data-page": String(index) }, [canvas]);
+          box.appendChild(el("span", { class: "page-cell__no" }, [String(index)]));
+          box.addEventListener("click", () => {
+            if (selected.has(index)) selected.delete(index);
+            else selected.add(index);
+            box.classList.toggle("page-cell--selected", selected.has(index));
+            deleteBtn.disabled = selected.size === 0;
+          });
+          gridWrap.appendChild(box);
+        });
+      } catch {
+        gridWrap.replaceChildren(el("p", { class: "muted" }, ["Failed to render page previews."]));
+      } finally {
+        ctx.busy.done();
+      }
+    };
+
+    deleteBtn.addEventListener("click", async () => {
+      const pdf = pdfEntry();
+      if (!pdf || !selected.size) return;
+      const deleted = [...selected].sort((a, b) => a - b);
+      const keep = Array.from({ length: pdf.pages }, (_, i) => i + 1).filter((p) => !selected.has(p));
+      if (!keep.length) return toast("Cannot delete every page", "error");
+
+      const before: { data: Uint8Array; pages: number } = { data: pdf.data, pages: pdf.pages };
+      const after: { data: Uint8Array; pages: number } = {
+        data: await extractPages(pdf.data, keep.map((p) => p - 1)),
+        pages: keep.length
+      };
+      ctx.busy.spin("Deleting pages…");
+      try {
+        pdf.data = after.data;
+        pdf.pages = after.pages;
+        ctx.pushHistory({
+          label: `deleted ${deleted.length} page(s)`,
+          undo: () => {
+            pdf.data = before.data;
+            pdf.pages = before.pages;
+            void renderGrid();
+          },
+          redo: () => {
+            pdf.data = after.data;
+            pdf.pages = after.pages;
+            void renderGrid();
+          }
+        });
+        toast(`Deleted ${deleted.length} page(s) — undo available`, "success");
+      } finally {
+        ctx.busy.done();
+        void renderGrid();
+      }
+    });
+
+    saveBtn.addEventListener("click", () => {
+      const pdf = pdfEntry();
+      if (!pdf) return toast("No PDF to save", "error");
+      ctx.showResult([
+        {
+          name: pdf.file.name.replace(/\.pdf$/i, "-organized.pdf"),
+          blob: blobFromBytes(pdf.data, "application/pdf"),
           mime: "application/pdf"
-        }))
-      );
-      toast(`${parts.length} part(s) ready — preview & download below`, "success");
-    } catch (err) {
-      toast(`Split failed: ${err instanceof Error ? err.message : err}`, "error");
-    } finally {
-      btn.disabled = false;
-      progress.done();
+        }
+      ]);
+    });
+
+    onEntriesChange(() => void renderGrid());
+    host.append(
+      el("p", { class: "tool-desc" }, [
+        "Click pages to select, delete them (Undo/Redo in top bar), then Save the result."
+      ]),
+      dropzoneEl(ctx, "exactly 1 PDF"),
+      fileListEl(),
+      gridWrap,
+      el("div", { class: "row gap" }, [deleteBtn, saveBtn])
+    );
+    void renderGrid();
+  }
+};
+
+// ── Tool entry ────────────────────────────────────────
+
+export const mount = (root: HTMLElement): void => {
+  clear(root);
+  const shell = ToolShell(
+    "Merge & Split",
+    [mergeFeature, splitFeature, organizeFeature],
+    {
+      onReset: () => {
+        entries.forEach((e) => e.dispose?.());
+        entries.length = 0;
+      }
     }
-  };
-
-  root.append(
-    el("h2", { class: "tool-title" }, ["Merge & Split"]),
-    el("p", { class: "tool-desc" }, [
-      "Combine PDFs & images into one document, split PDFs by range, or remove pages visually. Every step shows progress; results can be previewed before download."
-    ]),
-    dropzone({
-      label: "Add PDFs & images",
-      hint: "drop or browse — PNG/JPEG become PDF pages",
-      multiple: true,
-      accept: ".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg",
-      onFiles: (files) => void addFiles(files)
-    }),
-    list,
-    status,
-    gridWrap,
-    el("div", { class: "row gap" }, [
-      el("button", { class: "btn btn--danger", id: "do-delete" }, ["Delete selected pages"]),
-      el("span", { class: "muted" }, ["Split by"]),
-      rangeInput,
-      el("button", { class: "btn", id: "do-split" }, ["Split"])
-    ]),
-    el("div", { class: "row gap" }, [
-      el("button", { class: "btn btn--primary", id: "do-merge" }, ["Merge into one PDF"])
-    ]),
-    progress.node,
-    out.node
   );
+  root.append(shell.node);
 
-  root.querySelector<HTMLButtonElement>("#do-merge")!.addEventListener("click", () => void runMerge());
-  root.querySelector<HTMLButtonElement>("#do-split")!.addEventListener("click", () => void runSplit());
-  root.querySelector<HTMLButtonElement>("#do-delete")!.addEventListener("click", () => void deleteSelected());
-
-  zebra();
+  // handoff intake (oper file dari tool lain) — langsung masuk ke daftar file
+  const incoming = takeHandoff("pdf-organizer");
+  if (incoming.length) {
+    void addFiles(incoming, { busy: noopBusy() });
+    toast(`${incoming.length} file(s) handed off from another tool`, "success");
+  }
 };
