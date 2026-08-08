@@ -72,6 +72,17 @@
 | F-56 | Prompt beautifier: template R-CTCEO lokal + opsi LLM polish | P1 |
 | F-57 | Humanizer: BYOK LLM rewrite (dengan disclaimer anti-detection) | P2 |
 
+### 1.7 UX Wajib (semua tool file-termsukaan)
+
+| ID | Requirement | Priority |
+|----|-------------|----------|
+| F-58 | Visionable: semua input file dokumen/gambar/video/audio dapat `fileThumb` — thumbnail asli (image/video) atau render first frame/page (PDF via pdfjs), fallback ikon kontekstual | P0 |
+| F-59 | Preview area: halaman (page thumbnails) untuk PDF, list thumbnails untuk multi-file | P0 |
+| F-60 | Progress wajib pada semua operasi berdurasi: spinner (tidak tentu) atau progress bar deterministik `busy()`; user selalu tahu proses sedang berjalan — `busy.ts` | P0 |
+| F-61 | Output preview sebelum download: semua hasil operasi masuk ke `output-panel.ts` (Preview terintegrasi: PDF via iframe, image/video/audio/tex) — "seperti git commit sebelum push", tidak direct-download | P0 |
+| F-62 | Search global & tombol navigasi: search global hanya di home; halaman tool menampilkan back-link "All tools" | P0 |
+| F-63 | Semua tombol fitur tool selalu terlihat (tidak hilang saat mode lain aktif) | P0 |
+
 ---
 
 ## 2. Kebutuhan Non-Fungsional

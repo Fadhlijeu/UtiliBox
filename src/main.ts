@@ -66,6 +66,9 @@ const router = async () => {
   const main = document.querySelector<HTMLElement>("#app-main")!;
   const search = document.querySelector<HTMLInputElement>(".global-search");
 
+  const inTool = Boolean(m?.[1]);
+  search?.classList.toggle("hidden", inTool);
+
   if (m?.[1]) {
     const id = decodeURIComponent(m[1]);
     updateRecent(id);

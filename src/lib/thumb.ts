@@ -37,7 +37,8 @@ export const fileThumb = async (file: File): Promise<Thumb> => {
     try {
       const bytes = new Uint8Array(await readFileAsArrayBuffer(file));
       const pdfjs = await getPdfJs();
-      const doc = await pdfjs.getDocument({ data: bytes as Uint8Array }).promise;
+      // pdfjs may detach/transfer the input buffer — always hand it a copy
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
       const page = await doc.getPage(1);
       const original = page.getViewport({ scale: 1 });
       const scale = 180 / original.width;
@@ -77,7 +78,7 @@ export const pdfPageThumbs = async (
   onPage: (canvas: HTMLCanvasElement, index: number) => void
 ): Promise<void> => {
   const pdfjs = await getPdfJs();
-  const doc = await pdfjs.getDocument({ data: bytes as Uint8Array }).promise;
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
   const maxW = 200;
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);

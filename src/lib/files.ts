@@ -24,6 +24,10 @@ export const downloadBytes = (
   mime = "application/octet-stream"
 ): void => downloadBlob(new Blob([bytes.buffer as ArrayBuffer], { type: mime }), filename);
 
+/** A Blob from bytes, safe against ArrayBufferLike typing issues. */
+export const blobFromBytes = (bytes: Uint8Array, mime: string): Blob =>
+  new Blob([bytes.buffer as ArrayBuffer], { type: mime });
+
 export const copyText = async (text: string): Promise<boolean> => {
   try {
     await navigator.clipboard.writeText(text);

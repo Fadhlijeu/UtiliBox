@@ -7,20 +7,25 @@ export const renderToolPage = async (root: HTMLElement, id: string): Promise<voi
     clear(root);
     root.appendChild(
       el("div", { class: "empty-state" }, [
-        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["help"]),
-        el("p", {}, [`Tool “${id}” not found.`]),
+        el("span", { class: "material-icons-outlined", "aria-hidden": "true" }, ["help"]),
+        el("p", {}, [`Tool "${id}" not found.`]),
         el("a", { class: "btn", href: "#/" }, ["Back to home"])
       ])
     );
     return;
   }
 
+  const back = el("a", { class: "tool-back", href: "#/" }, [
+    el("span", { class: "material-icons-outlined", "aria-hidden": "true" }, ["arrow_back"]),
+    "All tools"
+  ]);
   const stage = el("div", {
     class: "tool-stage",
     "data-tool-id": meta.id,
     "aria-busy": "true"
   });
   clear(root);
+  root.appendChild(el("div", { class: "tool-top" }, [back, el("h1", { class: "tool-title" }, [meta.title])]));
   root.appendChild(stage);
 
   try {
@@ -30,7 +35,7 @@ export const renderToolPage = async (root: HTMLElement, id: string): Promise<voi
   } catch {
     stage.replaceChildren(
       el("div", { class: "empty-state" }, [
-        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["construction"]),
+        el("span", { class: "material-icons-outlined", "aria-hidden": "true" }, ["construction"]),
         el("p", { class: "tool-title" }, [meta.title]),
         el("p", {}, ["This tool is planned but not built yet. Roadmap: ", meta.tier, "."]),
         el("a", { class: "btn", href: "#/" }, ["Back to home"])
