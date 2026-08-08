@@ -86,6 +86,12 @@
 | F-65 | Undo/Redo/Reset di top bar shell: tiap langkah mutable (mis. delete halaman) push `HistoryCmd` — Undo/Redo jalan, Reset mengosongkan history + hasil + state tool (file dilepas) | P0 |
 | F-66 | Handoff "oper file": output bisa dikirim ke tool/fitur lain lewat menu Send-to (filter MIME, tanpa self-loop); receiver punya intake (`takeHandoff`) — antar fitur tool sama & antar tool | P0 |
 | F-67 | Tombol aksi contextual disabled (bukan hilang): mis. Split aktif hanya saat tepat 1 PDF; Merge aktif saat ≥2 file; hint teks selalu memberi tahu syarat | P0 |
+| F-68 | History bar (Undo/Redo/Reset) muncul hanya saat ada aktivitas: file di-upload atau operasi mutable (delete pindah halaman) dilakukan — tersembunyi sebelum itu | P0 |
+| F-69 | Fitur single-input (Split, delete pages): jika ada beberapa file, fitur berlaku per file dengan section terpisah "File 1", "File 2", … masing-masing punya kontrol sendiri | P0 |
+| F-70 | Organize = drag & drop reorder halaman + select/delete halaman (Undo/Redo), bukan fitur delete saja; hasil final = PDF dengan urutan baru | P0 |
+| F-71 | Preview = view/modal proporsional (bukan full-halaman membesar): card terpusat, tinggi ≤86vh, tombol Back (browser Back ikut menutup), Download di dalam preview, Escape menutup | P0 |
+| F-72 | Output PDF punya strip preview tiap halaman ("Pages" toggle) agar user memeriksa setiap halaman sebelum download | P0 |
+| F-73 | CI/chrome styling: top bar (judul + history), tab fitur underline, section per-file, card output; semua ikon pakai class `material-symbols-outlined` (jangan `material-icons-outlined` yang gagal render) | P0 |
 
 ---
 

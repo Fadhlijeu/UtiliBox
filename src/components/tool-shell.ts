@@ -26,8 +26,9 @@ export interface FeatureCtx {
 
 /**
  * Tool shell — one page per tool, features as tabs on top.
- * Rule: only the ACTIVE feature is visible; result opens in a SEPARATE view;
- * undo/redo/reset live in the top bar.
+ * Rules: only the ACTIVE feature is visible; results open in a SEPARATE view
+ * ("Result" page with Back); Undo/Redo/Reset live in the top bar and only
+ * appear once there is something to undo (F-64, F-65).
  */
 export const ToolShell = (
   title: string,
@@ -40,6 +41,12 @@ export const ToolShell = (
   const workspace = el("div", { class: "feature-workspace" });
   const progress = busy();
   const result = OutputPanel();
+
+  const historyBar = el("div", { class: "history-bar", hidden: "hidden" }, []);
+  const history: HistoryCmd[] = [];
+  const redoStack: HistoryCmd[] = [];
+  let hasActivity = false;
+
   const resultWrap = el("div", { class: "result-view", hidden: "hidden" }, [
     el("div", { class: "result-view__head" }, [
       el("h3", { class: "result-view__title" }, ["Result"]),
@@ -51,17 +58,21 @@ export const ToolShell = (
     result.node
   ]);
 
-  const historyBar = el("div", { class: "history-bar" }, []);
-  const history: HistoryCmd[] = [];
-  const redoStack: HistoryCmd[] = [];
+  resultWrap.querySelector<HTMLButtonElement>("[data-back]")?.addEventListener("click", () => {
+    resultWrap.hidden = true;
+    workspace.classList.remove("hidden");
+    window.scrollTo(0, 0);
+  });
 
   const renderHistory = () => {
+    historyBar.hidden = !hasActivity;
     historyBar.replaceChildren(
       el("button", {
         class: "btn btn--sm btn--ghost",
         type: "button",
         disabled: history.length === 0 ? "" : undefined,
-        "data-h": "undo"
+        "data-h": "undo",
+        title: history.length ? `${history.length} step(s) to undo` : "Nothing to undo"
       }, [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["undo"]), "Undo"]),
       el("button", {
         class: "btn btn--sm btn--ghost",
@@ -104,8 +115,8 @@ export const ToolShell = (
     resultWrap.hidden = true;
     workspace.classList.remove("hidden");
     opts.onReset?.();
+    hasActivity = false;
     renderHistory();
-    // remount active feature for a fresh state
     mountFeature(current);
   };
 
@@ -118,6 +129,7 @@ export const ToolShell = (
       window.scrollTo(0, 0);
     },
     pushHistory(cmd) {
+      hasActivity = true;
       history.push(cmd);
       redoStack.length = 0;
       renderHistory();
@@ -156,7 +168,10 @@ export const ToolShell = (
   );
 
   root.appendChild(el("div", { class: "tool-head" }, [
-    el("h2", { class: "tool-title" }, [title]),
+    el("div", { class: "tool-head__left" }, [
+      el("h2", { class: "tool-title" }, [title]),
+      el("span", { class: "tool-head__sub muted" }, ["preview first, then download — 100% local"])
+    ]),
     historyBar
   ]));
   root.appendChild(tabs);
@@ -168,6 +183,11 @@ export const ToolShell = (
 
   return {
     node: root,
+    /** mark that the tool has state worth undoing/resetting (e.g. files added) */
+    activity: () => {
+      hasActivity = true;
+      renderHistory();
+    },
     /** switch to a feature (used by handoff of same-tool) */
     activate: (id: string) => {
       const tab = tabs.querySelector<HTMLButtonElement>(`[data-feature="${id}"]`);

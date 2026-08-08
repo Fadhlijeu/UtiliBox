@@ -1,6 +1,6 @@
 import { el } from "../lib/dom";
 import { downloadBlob, formatBytes } from "../lib/files";
-import { fileThumb } from "../lib/thumb";
+import { fileThumb, pdfPageThumbs } from "../lib/thumb";
 import { handoffTargetsFor, stageHandoff } from "../lib/handoff";
 import { toast } from "./toast";
 
@@ -18,12 +18,13 @@ const SAME_TOOL_EVENT = "utilibox:feature-handoff";
 
 /**
  * Output panel — appears only when there IS output (never idle chrome).
- * Each file row: thumbnail, name, size, Download, Preview, Send-to…
+ * Each file: thumbnail, name, size, Pages (PDF per-page strip), Preview
+ * (modal), Download, Send-to…
  */
 export const OutputPanel = () => {
   const list = el("div", { class: "output-grid" });
   const panel = el("section", { class: "output-panel", hidden: "hidden" }, [
-    el("h3", { class: "output-panel__title" }, ["Output · preview first, then download or send"]),
+    el("h3", { class: "output-panel__title" }, ["Output — preview first, then download or send"]),
     list
   ]);
   let urls: string[] = [];
@@ -47,24 +48,56 @@ export const OutputPanel = () => {
         ]);
         previewBtn.addEventListener("click", () => openPreview(f, url));
 
-        const row = el("div", { class: "output-file" }, [
-          thumbSlot,
-          el("span", { class: "output-file__name" }, [f.name]),
-          el("span", { class: "muted" }, [formatBytes(f.blob.size)]),
-          previewBtn,
-          el("button", { class: "btn btn--sm btn--ghost", type: "button" }, [
-            el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["download"]),
-            "Download"
-          ])
+        const downloadBtn = el("button", { class: "btn btn--sm btn--ghost", type: "button" }, [
+          el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["download"]),
+          "Download"
         ]);
-        row.querySelectorAll(".btn")[1].addEventListener("click", () => {
+        downloadBtn.addEventListener("click", () => {
           downloadBlob(f.blob, f.name);
           toast("Download started", "success");
         });
 
+        const row = el("div", { class: "output-item" }, [
+          el("div", { class: "output-file" }, [
+            thumbSlot,
+            el("span", { class: "output-file__name" }, [f.name]),
+            el("span", { class: "muted" }, [formatBytes(f.blob.size)]),
+            previewBtn,
+            downloadBtn
+          ])
+        ]);
+        const fileRow = row.firstElementChild as HTMLElement;
+
         void fileThumb(new File([f.blob], f.name, { type: f.mime })).then((t) => {
           thumbSlot.replaceChildren(t.node);
         });
+
+        // per-page preview strip for PDF outputs (verify before download)
+        if (f.mime === "application/pdf") {
+          const pagesBtn = el("button", { class: "btn btn--sm btn--ghost output-pages-toggle", type: "button" }, [
+            el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["grid_view"]),
+            "Pages"
+          ]);
+          const strip = el("div", { class: "output-pdf-pages", hidden: "hidden" });
+          pagesBtn.addEventListener("click", async () => {
+            strip.hidden = !strip.hidden;
+            if (strip.hidden) return;
+            if (!strip.childElementCount) {
+              try {
+                const bytes = new Uint8Array(await f.blob.arrayBuffer());
+                await pdfPageThumbs(bytes, (canvas, i) => {
+                  strip.appendChild(
+                    el("div", { class: "output-page" }, [canvas, el("span", { class: "output-page__no" }, [String(i)])])
+                  );
+                });
+              } catch {
+                strip.appendChild(el("p", { class: "muted" }, ["Could not render page previews."]));
+              }
+            }
+          });
+          fileRow.appendChild(pagesBtn);
+          row.appendChild(strip);
+        }
 
         // send-to (oper file): filtered by mime, no self-loop
         const targets = handoffTargetsFor(f.mime, cur, "");
@@ -89,7 +122,7 @@ export const OutputPanel = () => {
             }
             select.value = "";
           });
-          row.appendChild(select);
+          fileRow.appendChild(select);
         }
         return row;
       })
@@ -97,21 +130,52 @@ export const OutputPanel = () => {
     panel.hidden = false;
   };
 
-  const openPreview = (f: OutputFile, url: string) => {
-    // separate preview view: small embedded render, not full page
+const openPreview = (f: OutputFile, url: string) => {
+    // modal preview — acts like a page: browser Back also closes it.
     const overlay = el("div", { class: "preview-overlay", role: "dialog", "aria-modal": "true" }, [
       el("div", { class: "preview-card" }, [
         el("div", { class: "preview-card__head" }, [
-          el("span", { class: "output-file__name" }, [f.name]),
-          el("button", { class: "btn btn--sm btn--ghost", type: "button", "data-close": "" }, ["✕"])
+          el("span", { class: "preview-card__name", title: f.name }, [f.name]),
+          el("div", { class: "row" }, [
+            el("button", { class: "btn btn--sm", type: "button", "data-close": "" }, [
+              el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["arrow_back"]),
+              "Back"
+            ]),
+            el("button", { class: "btn btn--sm btn--ghost", type: "button", "data-download": "" }, [
+              el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["download"]),
+              "Download"
+            ])
+          ])
         ]),
-        previewBody(f, url)
+        el("div", { class: "preview-card__body" }, [previewBody(f, url)])
       ])
     ]);
-    overlay.querySelector("[data-close]")!.addEventListener("click", () => overlay.remove());
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) overlay.remove();
+    history.pushState({ utiliboxPreview: true }, "");
+    const onPop = () => {
+      if (!overlay.isConnected) return;
+      overlay.remove();
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("popstate", onPop);
+    };
+    window.addEventListener("popstate", onPop);
+    const close = () => {
+      overlay.remove();
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("popstate", onPop);
+      if (history.state?.utiliboxPreview) history.back();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    overlay.querySelector("[data-close]")!.addEventListener("click", close);
+    overlay.querySelector("[data-download]")!.addEventListener("click", () => {
+      downloadBlob(f.blob, f.name);
+      toast("Download started", "success");
     });
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    document.addEventListener("keydown", onKey);
     document.body.appendChild(overlay);
   };
 
@@ -119,29 +183,29 @@ export const OutputPanel = () => {
     if (f.mime === "application/pdf") {
       const frame = el("iframe", { class: "preview-frame", title: "PDF preview" }) as HTMLIFrameElement;
       frame.src = url;
-      return el("div", { class: "preview-scroll" }, [frame]);
+      return frame;
     }
     if (f.mime.startsWith("image/")) {
       const img = el("img", { class: "preview-image", alt: f.name }) as HTMLImageElement;
       img.src = url;
-      return el("div", { class: "preview-scroll" }, [img]);
+      return img;
     }
     if (f.mime.startsWith("video/")) {
-      const v = el("video", { class: "preview-video", controls: "controls", src: url }) as HTMLVideoElement;
-      return el("div", { class: "preview-scroll" }, [v]);
+      const v = el("video", { class: "preview-video", controls: "controls", autoplay: "" }) as HTMLVideoElement;
+      v.src = url;
+      return v;
     }
     if (f.mime.startsWith("audio/")) {
-      const a = el("audio", { class: "preview-audio", controls: "controls", src: url }) as HTMLAudioElement;
-      return el("div", { class: "preview-scroll" }, [a]);
+      const a = el("audio", { class: "preview-audio", controls: "controls", autoplay: "" }) as HTMLAudioElement;
+      a.src = url;
+      return a;
     }
     if (f.mime.startsWith("text/") || f.mime.includes("json")) {
       const pre = el("pre", { class: "preview-text mono" });
       void fetch(url).then((r) => r.text()).then((t) => (pre.textContent = t.slice(0, 50_000)));
-      return el("div", { class: "preview-scroll" }, [pre]);
+      return pre;
     }
-    return el("div", { class: "preview-scroll" }, [
-      el("p", { class: "muted" }, ["No inline preview for this type — use Download."])
-    ]);
+    return el("p", { class: "muted" }, ["No inline preview for this type — use Download."]);
   };
 
   const clear = () => {

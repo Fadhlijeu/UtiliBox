@@ -6,19 +6,21 @@ import { fileThumb, pdfPageThumbs } from "../../lib/thumb";
 import { formatBytes, blobFromBytes } from "../../lib/files";
 import { mergePdfs, splitPdfByRanges, extractPages, validatePdf, imageToPdf } from "../../lib/pdf-core";
 import { takeHandoff } from "../../lib/handoff";
+import { SAME_TOOL_EVENT } from "../../components/output-panel";
 
 type Kind = "pdf" | "image";
 
 interface Entry {
   file: File;
   data: Uint8Array;
-  pages: number;
+  pages: number; // current page count (mutated by organize)
+  order: number[]; // 1-based page order (organize reorders this)
   kind: Kind;
-  dispose?: () => void;
 }
 
 const entries: Entry[] = [];
 const listeners: Array<() => void> = [];
+let notifyActivity: (() => void) | null = null;
 
 const noopBusy = (): FeatureCtx["busy"] => ({
   node: el("div"),
@@ -36,9 +38,9 @@ const onEntriesChange = (l: () => void): void => {
   listeners.push(l);
 };
 
-// ── shared entry helpers ─────────────────────────────
-const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<void> => {
+const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<number> => {
   const b = ctx.busy;
+  let added = 0;
   b.spin("Reading files…");
   try {
     for (let i = 0; i < files.length; i++) {
@@ -46,7 +48,14 @@ const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<v
       b.progress(i / files.length, `Reading ${i + 1}/${files.length}`);
       const kind = sniffKind(f);
       if (kind === "image") {
-        entries.push({ file: f, data: new Uint8Array(await readFileAsArrayBuffer(f)), pages: 1, kind });
+        entries.push({
+          file: f,
+          data: new Uint8Array(await readFileAsArrayBuffer(f)),
+          pages: 1,
+          order: [1],
+          kind
+        });
+        added++;
         continue;
       }
       if (!/\.pdf$/i.test(f.name)) {
@@ -59,50 +68,52 @@ const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<v
         continue;
       }
       const { PDFDocument } = await pdflib();
-      entries.push({ file: f, data, pages: (await PDFDocument.load(data)).getPageCount(), kind });
+      const pages = (await PDFDocument.load(data)).getPageCount();
+      entries.push({
+        file: f,
+        data,
+        pages,
+        order: Array.from({ length: pages }, (_, i) => i + 1),
+        kind
+      });
+      added++;
     }
   } finally {
     b.done();
+    if (added) notifyActivity?.();
     emitChange();
   }
+  return added;
 };
 
 const removeEntry = (i: number): void => {
-  entries[i].dispose?.();
   entries.splice(i, 1);
   emitChange();
 };
 
-const pdfEntry = (): Entry | undefined => entries.find((e) => e.kind === "pdf");
-const pdfCount = (): number => entries.filter((e) => e.kind === "pdf").length;
+const pdfs = (): Entry[] => entries.filter((e) => e.kind === "pdf");
 const totalSize = (): number => entries.reduce((s, e) => s + e.file.size, 0);
 
+// ── compact file list (merge & split) ────────────────
 const fileListEl = (): HTMLElement => {
   const list = el("ul", { class: "file-list" });
   const render = () => {
     list.replaceChildren(
       ...entries.map((e, i) => {
-        const row = el("li", { class: "file-row" }, [
-          el("span", { class: "file-row__thumb" }, ["…"]),
+        const thumbSlot = el("span", { class: "file-row__thumb" });
+        void fileThumb(e.file).then((t) => thumbSlot.replaceChildren(t.node));
+        return el("li", { class: "file-row" }, [
+          thumbSlot,
           el("span", { class: "file-row__name" }, [e.file.name]),
-          el("span", { class: "muted" }, [
+          el("span", { class: "muted file-row__meta" }, [
             `${e.kind === "image" ? "img → pdf" : `${e.pages} pg`} · ${formatBytes(e.file.size)}`
           ]),
-          el("button", { class: "btn btn--ghost btn--sm", "data-remove": String(i) }, ["x"])
+          el("button", { class: "btn btn--ghost btn--sm", type: "button", "data-remove": String(i) }, [
+            el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["delete"])
+          ])
         ]);
-        const slot = row.querySelector<HTMLElement>(".file-row__thumb")!;
-        void fileThumb(e.file).then((t) => {
-          e.dispose = t.dispose;
-          slot.replaceChildren(t.node);
-        });
-        return row;
       })
     );
-    if (!entries.length) {
-      list.appendChild(
-        el("p", { class: "muted" }, ["No files yet — drop files below."])
-      );
-    }
   };
   list.addEventListener("click", (ev) => {
     const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>("[data-remove]");
@@ -135,9 +146,7 @@ const mergeFeature: Feature = {
     ]);
     const sync = () => {
       const n = entries.length;
-      status.textContent = n
-        ? `${n} file(s) · ${formatBytes(totalSize())}`
-        : "No files yet — merge needs 2+";
+      status.textContent = n ? `${n} file(s) · ${formatBytes(totalSize())}` : "";
       mergeBtn.disabled = n < 2;
     };
 
@@ -156,7 +165,7 @@ const mergeFeature: Feature = {
         const out = await mergePdfs(parts);
         ctx.showResult([
           {
-            name: `${entries.length === 1 ? entries[0].file.name.replace(/\.(pdf|png|jpe?g)$/i, "") : "merged"}.pdf`,
+            name: `merged-${entries.length}-files.pdf`,
             blob: blobFromBytes(out, "application/pdf"),
             mime: "application/pdf"
           }
@@ -174,174 +183,272 @@ const mergeFeature: Feature = {
     sync();
     host.append(
       el("p", { class: "tool-desc" }, ["Combine several PDFs & images into a single PDF."]),
-      dropzoneEl(ctx, "2+ files needed — PDF, PNG, JPG"),
+      dropzoneEl(ctx, "2+ files — PDF, PNG, JPG"),
       fileListEl(),
-      status,
-      el("div", { class: "row gap" }, [mergeBtn])
+      el("div", { class: "row gap" }, [mergeBtn, status])
     );
   }
 };
 
+// Single-input feature: applies per file — one section per PDF ("File 1", "File 2", …).
 const splitFeature: Feature = {
   id: "split",
   label: "Split",
   mount(host, ctx) {
-    const rangeInput = el("input", { type: "text", class: "input", placeholder: "e.g. 1-3,5,8" });
-    const splitBtn = el("button", { class: "btn", type: "button" }, [
-      el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["content_cut"]),
-      "Split PDF"
-    ]);
-    const pdf = pdfEntry();
-    if (pdf) rangeInput.value = `1-${pdf.pages}`;
+    const sectionsHost = el("div", { class: "file-sections" });
 
-    const sync = () => {
-      const one = pdfCount() === 1;
-      splitBtn.disabled = !one;
+    const renderSections = () => {
+      sectionsHost.replaceChildren();
+      const list = pdfs();
+      if (!list.length) {
+        sectionsHost.appendChild(
+          el("div", { class: "file-empty" }, ["Add a PDF to split it by page ranges."])
+        );
+        return;
+      }
+      list.forEach((pdf, fileIdx) => {
+        const rangeInput = el("input", {
+          type: "text",
+          class: "input",
+          placeholder: "e.g. 1-3,5,8-9",
+          value: `1-${pdf.pages}`
+        });
+        const splitBtn = el("button", { class: "btn", type: "button" }, [
+          el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["content_cut"]),
+          "Split"
+        ]);
+        splitBtn.addEventListener("click", async () => {
+          if (!entries.includes(pdf)) return;
+          splitBtn.disabled = true;
+          ctx.busy.spin("Splitting…");
+          try {
+            const parts = await splitPdfByRanges(pdf.data, rangeInput.value);
+            const base = pdf.file.name.replace(/\.pdf$/i, "");
+            ctx.showResult(
+              parts.map((p, i) => ({
+                name: parts.length > 1 ? `${base}-part-${i + 1}.pdf` : `${base}.pdf`,
+                blob: blobFromBytes(p, "application/pdf"),
+                mime: "application/pdf"
+              }))
+            );
+            toast(`File ${fileIdx + 1} — ${parts.length} part(s) ready`, "success");
+          } catch (e) {
+            toast(`Split failed: ${e instanceof Error ? e.message : e}`, "error");
+          } finally {
+            splitBtn.disabled = false;
+            ctx.busy.done();
+          }
+        });
+        sectionsHost.appendChild(
+          el("section", { class: "file-section" }, [
+            el("div", { class: "file-section__head" }, [
+              el("span", { class: "file-section__idx" }, [`File ${fileIdx + 1}`]),
+              el("strong", { class: "file-section__name" }, [pdf.file.name]),
+              el("span", { class: "muted" }, [`${pdf.pages} pages · ${formatBytes(pdf.file.size)}`])
+            ]),
+            el("div", { class: "row" }, [
+              el("span", { class: "muted" }, ["Split by"]),
+              rangeInput,
+              splitBtn
+            ])
+          ])
+        );
+      });
     };
 
-    splitBtn.addEventListener("click", async () => {
-      const pdf = pdfEntry();
-      if (!pdf) return toast("Split needs exactly one PDF", "error");
-      splitBtn.disabled = true;
-      ctx.busy.spin("Splitting…");
-      try {
-        const parts = await splitPdfByRanges(pdf.data, rangeInput.value);
-        const base = pdf.file.name.replace(/\.pdf$/i, "");
-        ctx.showResult(
-          parts.map((p, i) => ({
-            name: `${base}-part-${i + 1}.pdf`,
-            blob: blobFromBytes(p, "application/pdf"),
-            mime: "application/pdf"
-          }))
-        );
-        toast(`${parts.length} part(s) ready`, "success");
-      } catch (e) {
-        toast(`Split failed: ${e instanceof Error ? e.message : e}`, "error");
-      } finally {
-        sync();
-        ctx.busy.done();
-      }
-    });
-
-    onEntriesChange(sync);
-    sync();
+    onEntriesChange(renderSections);
+    renderSections();
     host.append(
-      el("p", { class: "tool-desc" }, ["Split one PDF by ranges, e.g. “1-3,5,8-9”."]),
-      dropzoneEl(ctx, "exactly 1 PDF"),
+      el("p", { class: "tool-desc" }, [
+        "Split one PDF at a time by ranges, e.g. “1-3,5,8-9”. With several files, split applies per file."
+      ]),
+      dropzoneEl(ctx, "PDF files — split applies per file"),
       fileListEl(),
-      el("div", { class: "row gap" }, [el("span", { class: "muted" }, ["Split by"]), rangeInput, splitBtn])
+      sectionsHost
     );
   }
 };
 
+// Organize: per-PDF page grid — drag & drop reorder, select + delete, Undo/Redo, Save.
 const organizeFeature: Feature = {
   id: "organize",
   label: "Organize",
   mount(host, ctx) {
-    const gridWrap = el("div", { class: "page-grid" });
-    const selected = new Set<number>();
-    const deleteBtn = el("button", { class: "btn btn--danger", type: "button", disabled: "" }, [
-      "Delete selected pages"
-    ]);
-    const saveBtn = el("button", { class: "btn btn--primary", type: "button", disabled: "" }, [
-      "Save organized PDF"
-    ]);
+    const sectionsHost = el("div", { class: "file-sections" });
 
-    const renderGrid = async () => {
-      selected.clear();
-      deleteBtn.disabled = true;
-      const pdf = pdfEntry();
-      if (!pdf) {
-        gridWrap.replaceChildren(
-          el("div", { class: "page-grid__placeholder" }, [
-            el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["preview"]),
-            el("p", {}, ["Add exactly one PDF to organize its pages."])
-          ])
-        );
-        saveBtn.disabled = true;
-        return;
-      }
-      saveBtn.disabled = false;
-      ctx.busy.spin("Rendering page thumbnails…");
-      try {
+    const buildSection = (pdf: Entry, fileIdx: number): void => {
+      const gridWrap = el("div", { class: "page-grid" });
+      const selected = new Set<number>();
+      const deleteBtn = el("button", { class: "btn btn--danger", type: "button", disabled: "" }, [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["delete"]),
+        "Delete selected pages"
+      ]);
+      const saveBtn = el("button", { class: "btn btn--primary", type: "button" }, [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["download"]),
+        "Save this PDF"
+      ]);
+      const section = el("section", { class: "file-section" }, [
+        el("div", { class: "file-section__head" }, [
+          el("span", { class: "file-section__idx" }, [`File ${fileIdx + 1}`]),
+          el("strong", { class: "file-section__name" }, [pdf.file.name]),
+          el("span", { class: "muted" }, [`${pdf.pages} pages · ${formatBytes(pdf.file.size)}`])
+        ]),
+        el("p", { class: "muted file-section__hint" }, [
+          "Drag pages to reorder · click to select · Delete removes · Undo/Redo anytime"
+        ]),
+        gridWrap,
+        el("div", { class: "row gap file-section__actions" }, [deleteBtn, saveBtn])
+      ]);
+      sectionsHost.appendChild(section);
+
+      const snapshot = () => ({ data: pdf.data, order: [...pdf.order], pages: pdf.pages });
+      const restore = (s: { data: Uint8Array; order: number[]; pages: number }) => {
+        pdf.data = s.data;
+        pdf.order = s.order;
+        pdf.pages = s.pages;
+        renderGrid();
+      };
+      const dragFrom = { pos: -1 };
+
+      const renderGrid = async () => {
+        selected.clear();
+        deleteBtn.disabled = true;
         gridWrap.replaceChildren();
-        await pdfPageThumbs(pdf.data, (canvas, index) => {
-          const box = el("button", { class: "page-cell", type: "button", "data-page": String(index) }, [canvas]);
-          box.appendChild(el("span", { class: "page-cell__no" }, [String(index)]));
-          box.addEventListener("click", () => {
-            if (selected.has(index)) selected.delete(index);
-            else selected.add(index);
-            box.classList.toggle("page-cell--selected", selected.has(index));
-            deleteBtn.disabled = selected.size === 0;
+        if (!pdf.pages) return;
+        ctx.busy.spin(`Rendering pages (${pdf.file.name})…`);
+        try {
+          const cells = new Map<number, HTMLElement>();
+          await pdfPageThumbs(pdf.data, (canvas, pageNum) => {
+            const cell = el("button", {
+              class: "page-cell",
+              type: "button",
+              draggable: "true",
+              "data-page": String(pageNum)
+            }, [canvas]);
+            cell.appendChild(el("span", { class: "page-cell__no" }, [String(pdf.order.indexOf(pageNum) + 1)]));
+            cell.addEventListener("click", () => {
+              if (dragFrom.pos >= 0) return;
+              if (selected.has(pageNum)) selected.delete(pageNum);
+              else selected.add(pageNum);
+              cell.classList.toggle("page-cell--selected", selected.has(pageNum));
+              deleteBtn.disabled = selected.size === 0;
+            });
+            cell.addEventListener("dragstart", () => {
+              dragFrom.pos = pdf.order.indexOf(pageNum);
+              cell.classList.add("page-cell--dragging");
+            });
+            cell.addEventListener("dragend", () => {
+              cell.classList.remove("page-cell--dragging");
+              gridWrap.querySelectorAll(".page-cell--drop").forEach((c) => c.classList.remove("page-cell--drop"));
+            });
+            cell.addEventListener("dragover", (e) => {
+              e.preventDefault();
+              cell.classList.add("page-cell--drop");
+            });
+            cell.addEventListener("dragleave", () => cell.classList.remove("page-cell--drop"));
+            cell.addEventListener("drop", (e) => {
+              e.preventDefault();
+              cell.classList.remove("page-cell--drop");
+              const to = pdf.order.indexOf(pageNum);
+              if (dragFrom.pos < 0 || dragFrom.pos === to) return;
+              const before = snapshot();
+              const order = [...pdf.order];
+              const [moved] = order.splice(dragFrom.pos, 1);
+              order.splice(to, 0, moved);
+              pdf.order = order;
+              const after = snapshot();
+              ctx.pushHistory({
+                label: `moved page ${before.order[dragFrom.pos]} → position ${to + 1}`,
+                undo: () => restore(before),
+                redo: () => restore(after)
+              });
+              dragFrom.pos = -1;
+              renderGrid();
+            });
+            cells.set(pageNum, cell);
           });
-          gridWrap.appendChild(box);
-        });
-      } catch {
-        gridWrap.replaceChildren(el("p", { class: "muted" }, ["Failed to render page previews."]));
-      } finally {
-        ctx.busy.done();
-      }
+          for (const pageNum of pdf.order) {
+            const c = cells.get(pageNum);
+            if (c) gridWrap.appendChild(c);
+          }
+        } catch {
+          gridWrap.replaceChildren(el("p", { class: "muted" }, ["Failed to render page previews."]));
+        } finally {
+          ctx.busy.done();
+        }
+      };
+
+      deleteBtn.addEventListener("click", async () => {
+        if (!selected.size) return;
+        const before = snapshot();
+        const keep = pdf.order.filter((p) => !selected.has(p));
+        if (!keep.length) return toast("Cannot delete every page", "error");
+        ctx.busy.spin("Deleting pages…");
+        try {
+          pdf.data = await extractPages(pdf.data, keep.map((p) => p - 1));
+          pdf.order = keep;
+          pdf.pages = keep.length;
+          const after = snapshot();
+          ctx.pushHistory({
+            label: `deleted ${selected.size} page(s)`,
+            undo: () => restore(before),
+            redo: () => restore(after)
+          });
+          toast(`Deleted ${selected.size} page(s) — Undo available`, "success");
+        } catch (e) {
+          toast(`Delete failed: ${e instanceof Error ? e.message : e}`, "error");
+        } finally {
+          ctx.busy.done();
+          renderGrid();
+        }
+      });
+
+      saveBtn.addEventListener("click", async () => {
+        ctx.busy.spin("Saving organized PDF…");
+        try {
+          const out = await extractPages(pdf.data, pdf.order.map((p) => p - 1));
+          ctx.showResult([
+            {
+              name: pdf.file.name.replace(/\.pdf$/i, "-organized.pdf"),
+              blob: blobFromBytes(out, "application/pdf"),
+              mime: "application/pdf"
+            }
+          ]);
+        } catch (e) {
+          toast(`Save failed: ${e instanceof Error ? e.message : e}`, "error");
+        } finally {
+          ctx.busy.done();
+        }
+      });
+
+      renderGrid();
     };
 
-    deleteBtn.addEventListener("click", async () => {
-      const pdf = pdfEntry();
-      if (!pdf || !selected.size) return;
-      const deleted = [...selected].sort((a, b) => a - b);
-      const keep = Array.from({ length: pdf.pages }, (_, i) => i + 1).filter((p) => !selected.has(p));
-      if (!keep.length) return toast("Cannot delete every page", "error");
-
-      const before: { data: Uint8Array; pages: number } = { data: pdf.data, pages: pdf.pages };
-      const after: { data: Uint8Array; pages: number } = {
-        data: await extractPages(pdf.data, keep.map((p) => p - 1)),
-        pages: keep.length
-      };
-      ctx.busy.spin("Deleting pages…");
-      try {
-        pdf.data = after.data;
-        pdf.pages = after.pages;
-        ctx.pushHistory({
-          label: `deleted ${deleted.length} page(s)`,
-          undo: () => {
-            pdf.data = before.data;
-            pdf.pages = before.pages;
-            void renderGrid();
-          },
-          redo: () => {
-            pdf.data = after.data;
-            pdf.pages = after.pages;
-            void renderGrid();
-          }
-        });
-        toast(`Deleted ${deleted.length} page(s) — undo available`, "success");
-      } finally {
-        ctx.busy.done();
-        void renderGrid();
+    const renderSections = () => {
+      sectionsHost.replaceChildren();
+      const list = pdfs();
+      if (!list.length) {
+        sectionsHost.appendChild(
+          el("div", { class: "file-empty" }, [
+            el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["grid_view"]),
+            "Add one or more PDFs — drag pages to reorder and delete selected ones."
+          ])
+        );
+        return;
       }
-    });
+      list.forEach(buildSection);
+    };
 
-    saveBtn.addEventListener("click", () => {
-      const pdf = pdfEntry();
-      if (!pdf) return toast("No PDF to save", "error");
-      ctx.showResult([
-        {
-          name: pdf.file.name.replace(/\.pdf$/i, "-organized.pdf"),
-          blob: blobFromBytes(pdf.data, "application/pdf"),
-          mime: "application/pdf"
-        }
-      ]);
-    });
-
-    onEntriesChange(() => void renderGrid());
+    onEntriesChange(renderSections);
+    renderSections();
     host.append(
       el("p", { class: "tool-desc" }, [
-        "Click pages to select, delete them (Undo/Redo in top bar), then Save the result."
+        "Dry-run before saving: drag to reorder, select & delete, Undo/Redo anytime."
       ]),
-      dropzoneEl(ctx, "exactly 1 PDF"),
+      dropzoneEl(ctx, "PDF — organize applies per file"),
       fileListEl(),
-      gridWrap,
-      el("div", { class: "row gap" }, [deleteBtn, saveBtn])
+      sectionsHost
     );
-    void renderGrid();
   }
 };
 
@@ -352,19 +459,21 @@ export const mount = (root: HTMLElement): void => {
   const shell = ToolShell(
     "Merge & Split",
     [mergeFeature, splitFeature, organizeFeature],
-    {
-      onReset: () => {
-        entries.forEach((e) => e.dispose?.());
-        entries.length = 0;
-      }
-    }
+    { onReset: () => entries.length = 0 }
   );
+  notifyActivity = shell.activity;
   root.append(shell.node);
 
-  // handoff intake (oper file dari tool lain) — langsung masuk ke daftar file
+  // handoff ke fitur tool yang sama (event dari output-panel Send-to)
+  window.addEventListener(SAME_TOOL_EVENT, (e) => {
+    const featureId = (e as CustomEvent<{ featureId?: string }>).detail?.featureId;
+    if (featureId) shell.activate(featureId);
+  });
+
+  // handoff intake (oper file dari tool lain) — masuk langsung ke daftar file
   const incoming = takeHandoff("pdf-organizer");
   if (incoming.length) {
     void addFiles(incoming, { busy: noopBusy() });
-    toast(`${incoming.length} file(s) handed off from another tool`, "success");
+    toast(`${incoming.length} file(s) handed off — switch to a feature to use them`, "success");
   }
 };
