@@ -1,4 +1,4 @@
-/* UtiliBox · components — buttons, inputs, dropzone, toast, progress */
+﻿/* UtiliBox · components — buttons, inputs, dropzone, toast, progress */
 
 .btn {
   display: inline-flex;
@@ -112,7 +112,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   background: var(--color-accent-dim);
 }
 
-.dropzone .material-icons-outlined { font-size: 32px; color: var(--color-accent-strong); }
+.dropzone .material-symbols-outlined { font-size: 32px; color: var(--color-accent-strong); }
 .dropzone__label { font-weight: 600; font-size: var(--text-md); color: var(--color-ink); }
 .dropzone__hint { font-size: var(--text-xs); color: var(--color-ink-muted); }
 

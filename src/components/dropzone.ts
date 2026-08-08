@@ -1,4 +1,4 @@
-import { el } from "../lib/dom";
+﻿import { el } from "../lib/dom";
 
 export interface DropzoneOptions {
   label?: string;
@@ -27,7 +27,7 @@ export const dropzone = (options: DropzoneOptions): HTMLElement => {
       "aria-label": options.label ?? "choose file"
     },
     [
-      el("span", { class: "material-icons-outlined", "aria-hidden": "true" }, ["upload_file"]),
+      el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["upload_file"]),
       el("span", { class: "dropzone__label" }, [options.label ?? "Drop files here"]),
       el("span", { class: "dropzone__hint" }, [
         options.hint ?? "or click to browse — processed 100% locally"

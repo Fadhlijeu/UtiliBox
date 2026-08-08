@@ -1,4 +1,4 @@
-/* UtiliBox · shell layout — header, brand, search, footer */
+﻿/* UtiliBox · shell layout — header, brand, search, footer */
 
 .app-header {
   position: sticky;
@@ -82,7 +82,7 @@
   color: var(--color-ink);
 }
 
-.tool-category__title .material-icons-outlined {
+.tool-category__title .material-symbols-outlined {
   font-size: 18px;
   color: var(--color-accent-strong);
 }

@@ -1,4 +1,4 @@
-import { el } from "./lib/dom";
+﻿import { el } from "./lib/dom";
 import { renderHome } from "./pages/home";
 import { renderToolPage } from "./pages/tool";
 import { initTheme, toggleTheme } from "./lib/theme";
@@ -39,7 +39,7 @@ function buildHeader(): HTMLElement {
     class: "icon-btn",
     title: "Toggle theme",
     "aria-label": "Toggle theme"
-  }, [el("span", { class: "material-icons-outlined" }, ["dark_mode"])]);
+  }, [el("span", { class: "material-symbols-outlined" }, ["dark_mode"])]);
 
   themeBtn.addEventListener("click", () => {
     const next = toggleTheme();
@@ -49,7 +49,7 @@ function buildHeader(): HTMLElement {
   return el("header", { class: "app-header" }, [
     el("div", { class: "container app-header__inner" }, [
       el("a", { class: "brand", href: "#/" }, [
-        el("span", { class: "brand__mark material-icons-outlined", "aria-hidden": "true" }, ["widgets"]),
+        el("span", { class: "brand__mark material-symbols-outlined", "aria-hidden": "true" }, ["widgets"]),
         el("span", { class: "brand__name" }, ["UtiliBox"]),
         el("span", { class: "brand__tag muted" }, ["local toolbox"])
       ]),

@@ -1,11 +1,11 @@
-import { el } from "../lib/dom";
+﻿import { el } from "../lib/dom";
 import { downloadText, copyText } from "../lib/files";
 import { toast } from "./toast";
 
 /** Copy button with idle / done feedback. */
 export const copyButton = (getText: () => string, opts: { label?: string } = {}): HTMLElement => {
   const btn = el("button", { class: "btn btn--ghost", type: "button", "data-copy": "" }, [
-    el("span", { class: "material-icons-outlined", "aria-hidden": "true" }, ["content_copy"]),
+    el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["content_copy"]),
     el("span", {}, [opts.label ?? "Copy"])
   ]);
   btn.addEventListener("click", async () => {
@@ -22,7 +22,7 @@ export const downloadButton = (
   opts: { mime?: string; label?: string } = {}
 ): HTMLElement => {
   const btn = el("button", { class: "btn btn--ghost", type: "button" }, [
-    el("span", { class: "material-icons-outlined", "aria-hidden": "true" }, ["download"]),
+    el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["download"]),
     el("span", {}, [opts.label ?? "Download"])
   ]);
   btn.addEventListener("click", () => {
