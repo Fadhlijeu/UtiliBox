@@ -7,6 +7,7 @@ import {
   pageIndicesForRanges,
   mergePdfs,
   splitPdfByRanges,
+  splitPdfByOrderRanges,
   extractPages,
   validatePdf,
   imageToPdf
@@ -83,6 +84,22 @@ describe("splitPdfByRanges / extractPages", () => {
     const one = await extractPages(src, [4, 1, 1]);
     const doc = await PDFDocument.load(one);
     expect(doc.getPageCount()).toBe(3);
+  });
+
+  it("splitPdfByOrderRanges resolves ranges against a custom order", async () => {
+    const src = await makePdf(5, "O");
+    const order = [4, 5, 1, 2, 3]; // first three positions → pages 4,5,1
+    const parts = await splitPdfByOrderRanges(src, order, "1-2,4-5");
+    expect(parts).toHaveLength(2);
+    const doc1 = await PDFDocument.load(parts[0]);
+    expect(doc1.getPageCount()).toBe(2);
+    const doc2 = await PDFDocument.load(parts[1]);
+    expect(doc2.getPageCount()).toBe(2);
+  });
+
+  it("splitPdfByOrderRanges throws when a position exceeds order length", async () => {
+    const src = await makePdf(3);
+    await expect(splitPdfByOrderRanges(src, [2, 1, 3], "1-9")).rejects.toThrow();
   });
 
   it("extractPages throws when an index is out of bounds", async () => {

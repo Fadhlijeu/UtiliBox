@@ -92,6 +92,11 @@
 | F-71 | Preview = view/modal proporsional (bukan full-halaman membesar): card terpusat, tinggi ≤86vh, tombol Back (browser Back ikut menutup), Download di dalam preview, Escape menutup | P0 |
 | F-72 | Output PDF punya strip preview tiap halaman ("Pages" toggle) agar user memeriksa setiap halaman sebelum download | P0 |
 | F-73 | CI/chrome styling: top bar (judul + history), tab fitur underline, section per-file, card output; semua ikon pakai class `material-symbols-outlined` (jangan `material-icons-outlined` yang gagal render) | P0 |
+| F-74 | Merge punya preview gabungan semua halaman semua file setelah upload (flat grid, tag nama file + nomor urut); drag & drop untuk mengubah urutan halaman antar file (merge mengikuti urutan tampil) | P0 |
+| F-75 | Split punya preview halaman setelah upload (per file) + preview halaman hasil split (strip Pages otomatis terbuka di output); klik halaman untuk memilih range; hitungan range mengikuti urutan tampil (order-aware split `splitPdfByOrderRanges`) | P0 |
+| F-76 | Semua fitur (merge/split/organize) punya drag & move page + tombol ◀▶ per cell (fallback sentuh); drag-state di-reset di dragend/drop agar click-after-drag terkunci (tidak ada seleksi ghost) | P0 |
+| F-77 | Delete halaman anti-bug: pilihan divalidasi terhadap urutan saat ini (doomed ∩ order); mulai dari akar masalah = pdfjs v6 MENTRANSFER (detach) buffer input — semua input pdfjs WAJIB `bytes.slice()` (copy nyata, bukan `new Uint8Array` view yang berbagi buffer — ini penyebab "pilih sedikit kehapus banyak") | P0 |
+| F-78 | Picker delete lebih jelas: fill accent + badge centang + selection bar "N selected · Clear · Delete" (bukan sekadar border kuning) | P0 |
 
 ---
 

@@ -24,7 +24,27 @@
 
 ---
 
-## Prompt Terakhir (User, Juli-Agus 2026 -- sesi ini)
+## Prompt Terakhir (User — round 2 sesi ini)
+
+> "sip UI sudah oke tapi begini: merge tampilin preview pages nya tiap file (previewnya gabungan dari beberapa file setelah upload),
+> split juga harus ada preview pages setelah upload dan preview pages setelah split seperti organizer,
+> lalu saya mau semua fitur punya drag n move page.
+> perbaiki delete page error parah: saya pilih beberapa tapi kehapus semua, saya pilih sedikit yang kehapus banyak. tiap file fiturnya jadi independen.
+> ui delete picker juga perbagus, jangan hanya kasih border kuning sebagai indikator."
+
+### Response / Keputusan (round 2)
+
+- **ROOT CAUSE "delete parah" (F-77)**: pdfjs v6 **mentransfer (detach) ArrayBuffer** yang dikirim ke `getDocument({data})`. Kode lama `new Uint8Array(bytes)` itu **view berbagi buffer, bukan copy** → begitu thumbnail/grid dirender, `pdf.data` jadi **detached (kosong)** → extract/delete/save kacau ("pilih sedikit kehapus banyak"). FIX: semua input pdfjs wajib **`bytes.slice()`** (copy beneran) di `thumb.ts` (fileThumb + pdfPageThumbs). `toPdfBytes` di pdf-core aman karena pdf-lib tidak detach.
+- **Merge**: flat grid preview GABUNGAN semua halaman semua file (`{entryIdx, page}`), tag nama file + urutan + p×n; drag antar-halaman lintas file + tombol ◀▶; merge urut sesuai urutan grid; output `extractPages(page-1)` per item + `mergePdfs`.
+- **Split**: per-file preview halaman setelah upload; drag reorder (`pdf.order`); **klik halaman = pilih range** (input terisi posisi); split pakai `splitPdfByOrderRanges` (baru, +2 unit test) → hasil split strip Pages otomatis kebuka di output panel.
+- **Semua fitur drag-move page**: helper `bindDnd` + `isCleanClick` (state di-reset dragend/drop → tak ada click-after-drag ghost); `moveButtons` ◀▶ per cell (sentuh).
+- **Picker delete**: fill accent + badge centang (anim) + `.selection-bar` "N selected · Clear · Delete" — bukan border kuning doang.
+- **Independen per file**: tiap section punya `selected` + `state` sendiri; `renderSections` guard `isConnected` supaya listener zombie dari tab lain tidak re-render.
+- **Fix halus lain**: `posOf(item)` closure (bukan `items[idx]` stale); chip posisi merge pakai `.page-cell__pos` (bentrok `.page-cell__no` absolute).
+
+---
+
+## Prompt Terakhir (round 1 sesi ini)
 
 > "oke, UInya jelek banget top bar jelek, terus kenapa ada dua display 'No files yet — drop files below' & 'No files yet — merge needs 2+', bikin ini optimal,
 > undo, redo, reset itu muncul ketika sudah upload file + fitur digunakan.
@@ -89,7 +109,8 @@ Status sesi ini: lint ✅, test ✅ (26), build ✅. Terakhir di-cek komitman: "
 
 | Tanggal/Sesi | Aktivitas |
 |---|---|
-| 2026-08-09 (sesi ini) | Rebuild organizer (per-file sections, drag reorder, undo/save); ToolShell back-button + aktivitas; OutputPanel modal preview + Pages strip; CSS semua komponen baru; fix icon `material-symbols-outlined` di tool.ts; handoff same-tool wiring; workflow F-68..73; buat progress.md ini |
+| 2026-08-09 (sesi ini) | Rebuild organizer (organizer per-file sections, drag reorder, undo/save); ToolShell back-button + aktivitas; OutputPanel modal preview + Pages strip; CSS semua komponen baru; fix icon `material-symbols-outlined` di tool.ts; handoff same-tool wiring; workflow F-68..73; buat progress.md ini |
+| 2026-08-09 (round 2) | **FIX detach pdfjs `bytes.slice()`** (root cause delete parah); merge flat-grid preview + drag lintas file; split dengan preview + pilih-range/drag + `splitPdfByOrderRanges`; drag-move universal (bindDnd/isCleanClick/◀▶); picker delete (badge+fill+selection bar); independen per file; auto-open Pages strip PDF; F-74..F-78 |
 
 ## Tips
 

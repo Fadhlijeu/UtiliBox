@@ -90,6 +90,28 @@ export const splitPdfByRanges = async (
   return out;
 };
 
+/**
+ * Split where page ranges refer to positions in a CURRENT page order
+ * (e.g. after drag reordering). `order` = 1-based page numbers in display
+ * order; range "1-3" means the first three pages of `order`.
+ */
+export const splitPdfByOrderRanges = async (
+  source: Uint8Array,
+  order: number[],
+  rangesInput: string
+): Promise<Uint8Array[]> => {
+  const ranges = parsePageRanges(rangesInput);
+  if (!order.length) throw new Error("empty order");
+  const out: Uint8Array[] = [];
+  for (const r of ranges) {
+    if (r.to > order.length) throw new Error(`position ${r.to} out of range (${order.length})`);
+    const indices: number[] = [];
+    for (let pos = r.from - 1; pos <= r.to - 1; pos++) indices.push(order[pos] - 1);
+    out.push(await extractPages(source, indices));
+  }
+  return out;
+};
+
 export type ImageMime = "image/jpeg" | "image/png";
 
 const sniffImageMime = (bytes: Uint8Array): ImageMime => {

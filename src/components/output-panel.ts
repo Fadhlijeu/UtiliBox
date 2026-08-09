@@ -97,6 +97,8 @@ export const OutputPanel = () => {
           });
           fileRow.appendChild(pagesBtn);
           row.appendChild(strip);
+          // auto-show the strip so pages are visible right away
+          pagesBtn.click();
         }
 
         // send-to (oper file): filtered by mime, no self-loop
