@@ -38,30 +38,29 @@ export const OutputPanel = () => {
   const show = (files: OutputFile[]) => {
     clearOld();
     const cur = currentToolId();
-    head.replaceChildren(
-      el("h3", { class: "output-panel__title" }, ["Output — preview first, then download or send"]),
-      files.length > 1
-        ? (() => {
-            const zipBtn = el("button", { class: "btn btn--sm", type: "button" }, [
-              el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["folder_zip"]),
-              `Download all (${files.length} · ZIP)`
-            ]);
-            zipBtn.addEventListener("click", async () => {
-              zipBtn.disabled = true;
-              try {
-                const zip = await zipBlobs(files.map((f) => ({ name: f.name, blob: f.blob })));
-                downloadBlob(zip, "utilibox-output.zip");
-                toast("ZIP ready — downloading", "success");
-              } catch (e) {
-                toast(`ZIP failed: ${e instanceof Error ? e.message : e}`, "error");
-              } finally {
-                zipBtn.disabled = false;
-              }
-            });
-            return zipBtn;
-          })()
-        : null
-    );
+    const headNodes: Node[] = [
+      el("h3", { class: "output-panel__title" }, ["Output — preview first, then download or send"])
+    ];
+    if (files.length > 1) {
+      const zipBtn = el("button", { class: "btn btn--sm", type: "button" }, [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["folder_zip"]),
+        `Download all (${files.length} · ZIP)`
+      ]);
+      zipBtn.addEventListener("click", async () => {
+        zipBtn.disabled = true;
+        try {
+          const zip = await zipBlobs(files.map((f) => ({ name: f.name, blob: f.blob })));
+          downloadBlob(zip, "utilibox-output.zip");
+          toast("ZIP ready — downloading", "success");
+        } catch (e) {
+          toast(`ZIP failed: ${e instanceof Error ? e.message : e}`, "error");
+        } finally {
+          zipBtn.disabled = false;
+        }
+      });
+      headNodes.push(zipBtn);
+    }
+    head.replaceChildren(...headNodes);
     list.replaceChildren(
       ...files.map((f) => {
         const url = URL.createObjectURL(f.blob);

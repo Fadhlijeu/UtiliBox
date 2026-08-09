@@ -142,10 +142,6 @@ const dropzoneEl = (ctx: FeatureCtx, hint: string): HTMLElement =>
 
 // ── drag & drop + live DOM reorder (NO re-render on move) ───
 
-interface GridState {
-  from: number;
-}
-
 const liveIndex = (grid: HTMLElement, cell: HTMLElement): number =>
   Array.from(grid.children).indexOf(cell);
 
@@ -411,7 +407,7 @@ const buildPdfSection = (
   fileIdx: number,
   opts: SectionOpts,
   ctx: Pick<FeatureCtx, "pushHistory" | "busy">
-): PdfSectionApi => {
+): { section: HTMLElement; api: PdfSectionApi } => {
   const grid = el("div", { class: "page-grid" });
   const cellByPage = new Map<number, HTMLElement>();
   const selected = new Set<number>();
@@ -531,17 +527,16 @@ const buildSplitSection = (
   opts: {
     rangeInput: HTMLInputElement;
     splitBtn: HTMLButtonElement;
-    onSplit: () => Promise<void>;
   }
-): void => {
-  const syncFromSelection = () => {
-    const pos = [...opts.rangeInputSelection]
+): PdfSectionApi => {
+  const syncFromSelection = (sel: Set<number>) => {
+    const pos = [...sel]
       .map((p) => pdf.order.indexOf(p) + 1)
       .filter((p) => p > 0)
       .sort((a, b) => a - b);
     opts.rangeInput.value = pos.length ? pos.join(", ") : `1-${pdf.pages}`;
   };
-  const { clearSelection } = buildPdfSection(
+  const built = buildPdfSection(
     pdf,
     fileIdx,
     {
@@ -553,11 +548,13 @@ const buildSplitSection = (
           opts.splitBtn
         ])
       ],
-      onSelectionChange: syncFromSelection,
-      onOrderChange: syncFromSelection
+      onSelectionChange: () => syncFromSelection(built.api.selected),
+      onOrderChange: () => syncFromSelection(built.api.selected)
     },
     ctx
   );
+  host.appendChild(built.section);
+  return built.api;
 };
 
 // ── Feature: Split ─────────────────────────────────────────────
@@ -612,10 +609,9 @@ const splitFeature: Feature = {
           el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["content_cut"]),
           "Split"
         ]);
-        const { section, api } = buildSplitSection(pdf, fileIdx, sectionsHost, ctx, {
+        const api = buildSplitSection(pdf, fileIdx, sectionsHost, ctx, {
           rangeInput,
-          splitBtn,
-          ...
+          splitBtn
         });
         const doSplit = async () => {
           splitBtn.disabled = true;
@@ -644,7 +640,7 @@ const splitFeature: Feature = {
         for (let i = 0; i < list.length; i++) {
           const pdf = list[i];
           ctx.busy.progress(i / list.length, `File ${i + 1}/${list.length}`);
-          const ranges = rangeByMdf.get(pdf) ?? `1-${pdf.pages}`;
+          const ranges = rangeByPdf.get(pdf) ?? `1-${pdf.pages}`;
           const parts = await splitPdfByOrderRanges(pdf.data, pdf.order, ranges);
           const base = pdf.file.name.replace(/\.pdf$/i, "");
           parts.forEach((p, j) =>
@@ -676,5 +672,196 @@ const splitFeature: Feature = {
       el("div", { class: "row" }, [splitAllBtn]),
       sectionsHost
     );
+  }
+};
+
+// ── Feature: Organize (per file, full control) ─────────────────
+const organizeFeature: Feature = {
+  id: "organize",
+  label: "Organize",
+  mount(host, ctx) {
+    const sectionsHost = el("div", { class: "file-sections" });
+
+    const organizeAllBtn = el("button", { class: "btn", type: "button" }, [
+      el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["folder_zip"]),
+      "Organize all files"
+    ]);
+
+    const buildOrganizeSection = (pdf: Entry, fileIdx: number): PdfSectionApi => {
+      const count = el("span", { class: "selection-bar__count" }, ["0 selected"]);
+      const clearBtn = el("button", { class: "btn btn--sm btn--ghost", type: "button", disabled: "disabled" }, [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["close"]),
+        "Clear"
+      ]);
+      const deleteBtn = el("button", { class: "btn btn--sm btn--danger", type: "button", disabled: "disabled" }, [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["delete"]),
+        "Delete selected"
+      ]);
+      const saveBtn = el("button", { class: "btn btn--primary", type: "button" }, [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["download"]),
+        "Save this PDF"
+      ]);
+      const bar = el("div", { class: "selection-bar" }, [count, clearBtn, deleteBtn]);
+
+      const refreshBar = (sel: Set<number>) => {
+        count.textContent = `${sel.size} selected`;
+        clearBtn.disabled = sel.size === 0;
+        deleteBtn.disabled = sel.size === 0;
+      };
+
+      const built = buildPdfSection(
+        pdf,
+        fileIdx,
+        {
+          hint: "Drag pages to reorder · click to select · Undo/Redo anytime",
+          rows: [bar, el("div", { class: "row file-section__actions" }, [saveBtn])],
+          onSelectionChange: () => refreshBar(built.api.selected)
+        },
+        ctx
+      );
+      const api = built.api;
+      sectionsHost.appendChild(built.section);
+      refreshBar(api.selected);
+
+      clearBtn.addEventListener("click", () => {
+        api.clearSelection();
+        refreshBar(api.selected);
+      });
+
+      deleteBtn.addEventListener("click", async () => {
+        const doomed = [...api.selected].filter((p) => pdf.order.includes(p));
+        if (!doomed.length) return toast("Select pages to delete first", "error");
+        const keep = pdf.order.filter((p) => !doomed.includes(p));
+        if (!keep.length) return toast("Cannot delete every page", "error");
+        const beforeData = pdf.data;
+        const beforeOrder = [...pdf.order];
+        const beforePages = pdf.pages;
+        const afterData = await extractPages(pdf.data, keep.map((p) => p - 1));
+        const afterOrder = [...keep];
+        ctx.pushHistory({
+          label: `deleted ${doomed.length} page(s)`,
+          undo: () => {
+            pdf.data = beforeData;
+            pdf.order = beforeOrder;
+            pdf.pages = beforePages;
+            void api.renderGrid();
+          },
+          redo: () => {
+            pdf.data = afterData;
+            pdf.order = afterOrder;
+            pdf.pages = afterOrder.length;
+            void api.renderGrid();
+          }
+        });
+        pdf.data = afterData;
+        pdf.order = afterOrder;
+        pdf.pages = afterOrder.length;
+        api.clearSelection();
+        refreshBar(api.selected);
+        toast(`Deleted ${doomed.length} page(s) — Undo available`, "success");
+        void api.renderGrid();
+      });
+
+      saveBtn.addEventListener("click", async () => {
+        ctx.busy.spin(`Saving (${pdf.file.name})…`);
+        try {
+          const out = await extractPages(pdf.data, pdf.order.map((p) => p - 1));
+          ctx.showResult([
+            {
+              name: pdf.file.name.replace(/\.pdf$/i, "-organized.pdf"),
+              blob: blobFromBytes(out, "application/pdf"),
+              mime: "application/pdf"
+            }
+          ]);
+          toast("Organized PDF ready", "success");
+        } catch (e) {
+          toast(`Save failed: ${e instanceof Error ? e.message : e}`, "error");
+        } finally {
+          saveBtn.disabled = false;
+          ctx.busy.done();
+        }
+      });
+
+      void api.renderGrid();
+      return api;
+    };
+
+    const renderSections = () => {
+      sectionsHost.replaceChildren();
+      const list = pdfs();
+      organizeAllBtn.disabled = list.length < 2;
+      if (!list.length) {
+        sectionsHost.appendChild(
+          el("div", { class: "file-empty" }, [
+            el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["grid_view"]),
+            "Add one or more PDFs — drag pages to reorder and delete selected ones."
+          ])
+        );
+        return;
+      }
+      list.forEach((pdf, i) => buildOrganizeSection(pdf, i));
+    };
+
+    organizeAllBtn.addEventListener("click", async () => {
+      const list = pdfs();
+      if (list.length < 2) return toast("Add 2+ PDFs to organize all", "error");
+      organizeAllBtn.disabled = true;
+      ctx.busy.spin("Organizing all files…");
+      try {
+        const out: Array<{ name: string; blob: Blob; mime: string }> = [];
+        for (let i = 0; i < list.length; i++) {
+          const pdf = list[i];
+          ctx.busy.progress(i / list.length, `File ${i + 1}/${list.length}`);
+          const data = await extractPages(pdf.data, pdf.order.map((p) => p - 1));
+          out.push({
+            name: pdf.file.name.replace(/\.pdf$/i, "-organized.pdf"),
+            blob: blobFromBytes(data, "application/pdf"),
+            mime: "application/pdf"
+          });
+        }
+        ctx.showResult(out);
+        toast(`Organized ${out.length} file(s)`, "success");
+      } catch (e) {
+        toast(`Failed: ${e instanceof Error ? e.message : e}`, "error");
+      } finally {
+        organizeAllBtn.disabled = pdfs().length < 2;
+        ctx.busy.done();
+      }
+    });
+
+    onEntriesChange(renderSections);
+    renderSections();
+    host.append(
+      el("p", { class: "tool-desc" }, [
+        "Dry-run before saving: drag to reorder, select & delete, Undo/Redo anytime."
+      ]),
+      dropzoneEl(ctx, "PDF files — organize applies per file"),
+      el("div", { class: "row" }, [organizeAllBtn]),
+      sectionsHost
+    );
+  }
+};
+
+// ── Tool entry ────────────────────────────────────────
+
+export const mount = (root: HTMLElement): void => {
+  clear(root);
+  const shell = ToolShell(
+    "Merge & Split",
+    [mergeFeature, splitFeature, organizeFeature],
+    { onReset: () => (entries.length = 0) }
+  );
+  notifyActivity = shell.activity;
+  root.append(shell.node);
+
+  window.addEventListener(SAME_TOOL_EVENT, (e) => {
+    const featureId = (e as CustomEvent<{ featureId?: string }>).detail?.featureId;
+    if (featureId) shell.activate(featureId);
+  });
+
+  const incoming = takeHandoff("pdf-organizer");
+  if (incoming.length) {
+    void addFiles(incoming, { busy: noopBusy() });
+    toast(`${incoming.length} file(s) handed off — switch to a feature to use them`, "success");
   }
 };

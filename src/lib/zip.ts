@@ -101,5 +101,5 @@ export const zipBlobs = async (files: { name: string; blob: Blob }[]): Promise<B
     if (!name) continue;
     entries.push({ name, data: new Uint8Array(await f.blob.arrayBuffer()) });
   }
-  return new Blob([buildZip(entries)], { type: "application/zip" });
+  return new Blob([buildZip(entries).slice()], { type: "application/zip" });
 };
