@@ -2,6 +2,7 @@ import { el } from "../lib/dom";
 import { downloadBlob, formatBytes } from "../lib/files";
 import { fileThumb, pdfPageThumbs } from "../lib/thumb";
 import { handoffTargetsFor, stageHandoff } from "../lib/handoff";
+import { zipBlobs } from "../lib/zip";
 import { toast } from "./toast";
 
 export interface OutputFile {
@@ -23,10 +24,10 @@ const SAME_TOOL_EVENT = "utilibox:feature-handoff";
  */
 export const OutputPanel = () => {
   const list = el("div", { class: "output-grid" });
-  const panel = el("section", { class: "output-panel", hidden: "hidden" }, [
-    el("h3", { class: "output-panel__title" }, ["Output — preview first, then download or send"]),
-    list
+  const head = el("div", { class: "output-panel__head" }, [
+    el("h3", { class: "output-panel__title" }, ["Output — preview first, then download or send"])
   ]);
+  const panel = el("section", { class: "output-panel", hidden: "hidden" }, [head, list]);
   let urls: string[] = [];
 
   const clearOld = () => {
@@ -37,6 +38,30 @@ export const OutputPanel = () => {
   const show = (files: OutputFile[]) => {
     clearOld();
     const cur = currentToolId();
+    head.replaceChildren(
+      el("h3", { class: "output-panel__title" }, ["Output — preview first, then download or send"]),
+      files.length > 1
+        ? (() => {
+            const zipBtn = el("button", { class: "btn btn--sm", type: "button" }, [
+              el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["folder_zip"]),
+              `Download all (${files.length} · ZIP)`
+            ]);
+            zipBtn.addEventListener("click", async () => {
+              zipBtn.disabled = true;
+              try {
+                const zip = await zipBlobs(files.map((f) => ({ name: f.name, blob: f.blob })));
+                downloadBlob(zip, "utilibox-output.zip");
+                toast("ZIP ready — downloading", "success");
+              } catch (e) {
+                toast(`ZIP failed: ${e instanceof Error ? e.message : e}`, "error");
+              } finally {
+                zipBtn.disabled = false;
+              }
+            });
+            return zipBtn;
+          })()
+        : null
+    );
     list.replaceChildren(
       ...files.map((f) => {
         const url = URL.createObjectURL(f.blob);

@@ -20,7 +20,7 @@ interface Entry {
   file: File;
   data: Uint8Array;
   pages: number; // current page count (mutated by organize)
-  order: number[]; // 1-based page order (organize/split reorder this)
+  order: number[]; // 1-based page order (shared reorder state)
   kind: Kind;
 }
 
@@ -101,84 +101,7 @@ const removeEntry = (i: number): void => {
 const pdfs = (): Entry[] => entries.filter((e) => e.kind === "pdf");
 const totalSize = (): number => entries.reduce((s, e) => s + e.file.size, 0);
 
-// ── shared drag & drop ────────────────────────────────────
-interface DragState {
-  from: number;
-  justClick: boolean;
-}
-
-const newDragState = (): DragState => ({ from: -1, justClick: false });
-
-/**
- * Attach HTML5 drag to a page cell. `getPos()` reads current index of this
- * cell's item; `onDrop(targetIndex)` runs the actual move. Both dragend and
- * drop reset `from` and swallow the browser's click-after-drag.
- */
-const bindDnd = (
-  cell: HTMLElement,
-  grid: HTMLElement,
-  state: DragState,
-  getPos: () => number,
-  onDrop: (to: number) => void
-): void => {
-  cell.addEventListener("dragstart", () => {
-    state.from = getPos();
-    cell.classList.add("page-cell--dragging");
-  });
-  cell.addEventListener("dragend", () => {
-    cell.classList.remove("page-cell--dragging");
-    grid
-      .querySelectorAll(".page-cell--drop")
-      .forEach((c) => c.classList.remove("page-cell--drop"));
-    state.from = -1;
-    state.justClick = true;
-  });
-  cell.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    cell.classList.add("page-cell--drop");
-  });
-  cell.addEventListener("dragleave", () => cell.classList.remove("page-cell--drop"));
-  cell.addEventListener("drop", (e) => {
-    e.preventDefault();
-    cell.classList.remove("page-cell--drop");
-    if (state.from < 0) return;
-    const to = getPos();
-    if (to !== state.from) onDrop(to);
-    state.from = -1;
-    state.justClick = true;
-  });
-};
-
-/** True when a normal click may proceed (i.e. not right after a drag). */
-const isCleanClick = (state: DragState): boolean => {
-  if (state.justClick) {
-    state.justClick = false;
-    return false;
-  }
-  return state.from < 0;
-};
-
-/** Small ◀/▶ buttons under every cell — touch-friendly reordering. */
-const moveButtons = (cell: HTMLElement, onMove: (delta: -1 | 1) => void): void => {
-  const prev = el("button", { class: "page-cell__move", type: "button", "aria-label": "Move left" }, [
-    el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["chevron_left"])
-  ]);
-  const next = el("button", { class: "page-cell__move", type: "button", "aria-label": "Move right" }, [
-    el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["chevron_right"])
-  ]);
-  prev.addEventListener("click", (e) => {
-    e.stopPropagation();
-    onMove(-1);
-  });
-  next.addEventListener("click", (e) => {
-    e.stopPropagation();
-    onMove(1);
-  });
-  cell.appendChild(el("div", { class: "page-cell__moves" }, [prev, next]));
-};
-
-// ── shared UI bits ────────────────────────────────────────
-
+// ── shared list / grid helpers ────────────────────────────
 const fileListEl = (): HTMLElement => {
   const list = el("ul", { class: "file-list" });
   const render = () => {
@@ -217,11 +140,86 @@ const dropzoneEl = (ctx: FeatureCtx, hint: string): HTMLElement =>
     onFiles: (fs) => void addFiles(fs, ctx)
   });
 
-// ── Feature: Merge ─────────────────────────────────────────────
-// One flat preview grid of EVERY page (all files); drag to order pages.
+// ── drag & drop + live DOM reorder (NO re-render on move) ───
+
+interface GridState {
+  from: number;
+}
+
+const liveIndex = (grid: HTMLElement, cell: HTMLElement): number =>
+  Array.from(grid.children).indexOf(cell);
+
+const reorderDom = (grid: HTMLElement, cell: HTMLElement, to: number): number => {
+  const kids = Array.from(grid.children);
+  const from = kids.indexOf(cell);
+  if (from < 0 || to < 0 || to >= kids.length || from === to) return -1;
+  const [moved] = kids.splice(from, 1);
+  kids.splice(to, 0, moved);
+  grid.replaceChildren(...(kids as HTMLElement[]));
+  return from;
+};
+
+const refreshPositions = (grid: HTMLElement): void => {
+  grid.querySelectorAll<HTMLElement>(".page-cell").forEach((c, i) => {
+    const badge = c.querySelector<HTMLElement>(".page-cell__no, .page-cell__pos");
+    if (badge) badge.textContent = String(i + 1);
+  });
+};
+
+const bindDnd = (
+  cell: HTMLElement,
+  grid: HTMLElement,
+  state: { from: number },
+  onDrop: (to: number) => void
+): void => {
+  cell.addEventListener("dragstart", () => {
+    state.from = liveIndex(grid, cell);
+    cell.classList.add("page-cell--dragging");
+  });
+  cell.addEventListener("dragend", () => {
+    cell.classList.remove("page-cell--dragging");
+    grid
+      .querySelectorAll(".page-cell--drop")
+      .forEach((c) => c.classList.remove("page-cell--drop"));
+    state.from = -1;
+  });
+  cell.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    cell.classList.add("page-cell--drop");
+  });
+  cell.addEventListener("dragleave", () => cell.classList.remove("page-cell--drop"));
+  cell.addEventListener("drop", (e) => {
+    e.preventDefault();
+    cell.classList.remove("page-cell--drop");
+    if (state.from < 0) return;
+    state.from = -1;
+    onDrop(liveIndex(grid, cell));
+  });
+};
+
+const moveButtons = (cell: HTMLElement, onMove: (delta: -1 | 1) => void): void => {
+  const prev = el("button", { class: "page-cell__move", type: "button", "aria-label": "Move left" }, [
+    el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["chevron_left"])
+  ]);
+  const next = el("button", { class: "page-cell__move", type: "button", "aria-label": "Move right" }, [
+    el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["chevron_right"])
+  ]);
+  prev.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onMove(-1);
+  });
+  next.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onMove(1);
+  });
+  cell.appendChild(el("div", { class: "page-cell__moves" }, [prev, next]));
+};
+
+// ── Feature: Merge (flat combined preview, live drag reorder) ──
+
 interface MergeItem {
   entryIdx: number;
-  page: number | null;
+  page: number | null; // null → image
 }
 
 const mergeFeature: Feature = {
@@ -234,39 +232,55 @@ const mergeFeature: Feature = {
       el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["merge"]),
       "Merge in this order"
     ]);
-    const state = newDragState();
+    const state = { from: -1 };
+    const itemCache = new Map<string, MergeItem>();
     let items: MergeItem[] = [];
+    let cellByItem = new Map<MergeItem, HTMLElement>();
+
+    const getItem = (entryIdx: number, page: number | null): MergeItem => {
+      const key = `${entryIdx}:${page ?? "img"}`;
+      let it = itemCache.get(key);
+      if (!it) {
+        it = { entryIdx, page };
+        itemCache.set(key, it);
+      }
+      return it;
+    };
 
     const syncItems = () => {
       items = [];
       entries.forEach((e, entryIdx) => {
-        if (e.kind === "image") items.push({ entryIdx, page: null });
-        else for (let p = 1; p <= e.pages; p++) items.push({ entryIdx, page: p });
+        if (e.kind === "image") items.push(getItem(entryIdx, null));
+        else for (let p = 1; p <= e.pages; p++) items.push(getItem(entryIdx, p));
       });
     };
-    const copyItems = (): MergeItem[] => items.map((i) => ({ ...i }));
-    const posOf = (item: MergeItem): number => items.indexOf(item);
+    const cloneItems = (): MergeItem[] => [...items];
 
-    const applyMove = (from: number, to: number) => {
-      if (from < 0 || to < 0 || from >= items.length || to >= items.length || from === to) return;
-      const before = copyItems();
+    const relayoutFromCache = () => {
+      grid.replaceChildren(...items.map((it) => cellByItem.get(it)).filter((c): c is HTMLElement => !!c));
+      refreshPositions(grid);
+    };
+
+    const applyMove = (cell: HTMLElement, to: number) => {
+      const from = reorderDom(grid, cell, to);
+      if (from < 0) return;
+      const before = cloneItems();
       const copy = [...items];
       const [moved] = copy.splice(from, 1);
       copy.splice(to, 0, moved);
       items = copy;
-      const after = copyItems();
+      const after = cloneItems();
       ctx.pushHistory({
         label: "reordered pages",
         undo: () => {
           items = before;
-          void render();
+          relayoutFromCache();
         },
         redo: () => {
           items = after;
-          void render();
+          relayoutFromCache();
         }
       });
-      void render();
     };
 
     const render = async () => {
@@ -277,7 +291,10 @@ const mergeFeature: Feature = {
         : "";
       mergeBtn.disabled = n < 2;
       grid.replaceChildren();
-      if (!n) return;
+      if (!n) {
+        cellByItem = new Map();
+        return;
+      }
       ctx.busy.spin("Rendering combined preview…");
       try {
         const thumbs = new Map<string, HTMLElement>();
@@ -292,8 +309,8 @@ const mergeFeature: Feature = {
             );
           }
         }
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
+        cellByItem = new Map();
+        for (const item of items) {
           const e = entries[item.entryIdx];
           const thumb =
             item.page !== null ? thumbs.get(`${item.entryIdx}:${item.page}`) : imgNodes.get(item.entryIdx);
@@ -302,18 +319,22 @@ const mergeFeature: Feature = {
           ]);
           cell.appendChild(
             el("div", { class: "page-cell__tags" }, [
-              el("span", { class: "page-cell__tag page-cell__pos" }, [String(i + 1)]),
+              el("span", { class: "page-cell__pos" }, ["1"]),
               el("span", { class: "page-cell__tag" }, [short(e.file.name)]),
               item.page !== null
                 ? el("span", { class: "page-cell__tag" }, [`p${item.page}`])
                 : el("span", { class: "page-cell__tag page-cell__tag--img" }, ["IMG"])
             ])
           );
-          cell.addEventListener("click", () => void isCleanClick(state));
-          bindDnd(cell, grid, state, () => posOf(item), (to) => applyMove(posOf(item), to));
-          moveButtons(cell, (delta) => applyMove(posOf(item), posOf(item) + delta));
-          grid.appendChild(cell);
+          cell.addEventListener("click", () => void 0);
+          bindDnd(cell, grid, state, (to) => applyMove(cell, to));
+          moveButtons(cell, (delta) => {
+            const to = liveIndex(grid, cell) + delta;
+            applyMove(cell, to);
+          });
+          cellByItem.set(item, cell);
         }
+        relayoutFromCache();
       } catch {
         grid.replaceChildren(el("p", { class: "muted" }, ["Failed to render page previews."]));
       } finally {
@@ -368,382 +389,292 @@ const mergeFeature: Feature = {
   }
 };
 
+// ── shared per-file preview section (Split & Organize) ─────────
+
+interface PdfSectionApi {
+  grid: HTMLElement;
+  selected: Set<number>; // page numbers (1-based)
+  renderGrid: () => Promise<void>;
+  relayoutFromOrder: () => void;
+  clearSelection: () => void;
+}
+
+interface SectionOpts {
+  hint: string;
+  rows: Node[]; // extra rows below the grid (actions / selection bar)
+  onSelectionChange?: () => void;
+  onOrderChange?: () => void;
+}
+
+const buildPdfSection = (
+  pdf: Entry,
+  fileIdx: number,
+  opts: SectionOpts,
+  ctx: Pick<FeatureCtx, "pushHistory" | "busy">
+): PdfSectionApi => {
+  const grid = el("div", { class: "page-grid" });
+  const cellByPage = new Map<number, HTMLElement>();
+  const selected = new Set<number>();
+  const state = { from: -1 };
+
+  const syncSelectionClasses = () => {
+    grid.querySelectorAll<HTMLElement>(".page-cell").forEach((c) => {
+      const p = Number(c.dataset.page);
+      c.classList.toggle("page-cell--selected", selected.has(p));
+    });
+  };
+
+  const relayoutFromOrder = () => {
+    grid.replaceChildren(
+      ...pdf.order.map((p) => cellByPage.get(p)).filter((c): c is HTMLElement => !!c)
+    );
+    refreshPositions(grid);
+    syncSelectionClasses();
+  };
+
+  const applyOrderMove = (cell: HTMLElement, to: number) => {
+    const kids = Array.from(grid.children);
+    const from = kids.indexOf(cell);
+    if (from < 0 || to < 0 || to >= kids.length || from === to) return;
+    const before = [...pdf.order];
+    const copy = [...before];
+    const [moved] = copy.splice(from, 1);
+    copy.splice(to, 0, moved);
+    pdf.order = copy;
+    const after = [...pdf.order];
+    grid.insertBefore(cell, grid.children[to < from ? to : to + 1]);
+    refreshPositions(grid);
+    opts.onOrderChange?.();
+    ctx.pushHistory({
+      label: "reordered pages",
+      undo: () => {
+        pdf.order = before;
+        relayoutFromOrder();
+        opts.onOrderChange?.();
+      },
+      redo: () => {
+        pdf.order = after;
+        relayoutFromOrder();
+        opts.onOrderChange?.();
+      }
+    });
+  };
+
+  const renderGrid = async () => {
+    grid.replaceChildren();
+    if (!pdf.pages) return;
+    ctx.busy.spin(`Rendering pages (${pdf.file.name})…`);
+    try {
+      cellByPage.clear();
+      await pdfPageThumbs(pdf.data, (canvas, pageNum) => {
+        const cell = el("button", { class: "page-cell", type: "button" }, [canvas]);
+        cell.dataset.page = String(pageNum);
+        cell.appendChild(el("span", { class: "page-cell__no" }, ["1"]));
+        cell.appendChild(
+          el("span", { class: "page-cell__check" }, [
+            el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["check"])
+          ])
+        );
+        cell.addEventListener("click", () => {
+          if (state.from >= 0) return;
+          if (selected.has(pageNum)) selected.delete(pageNum);
+          else selected.add(pageNum);
+          cell.classList.toggle("page-cell--selected", selected.has(pageNum));
+          opts.onSelectionChange?.();
+        });
+        bindDnd(cell, grid, state, (to) => applyOrderMove(cell, to));
+        moveButtons(cell, (delta) => {
+          const kids = Array.from(grid.children);
+          applyOrderMove(cell, kids.indexOf(cell) + delta);
+        });
+        cellByPage.set(pageNum, cell);
+      });
+      relayoutFromOrder();
+    } catch {
+      grid.replaceChildren(el("p", { class: "muted" }, ["Failed to render page previews."]));
+    } finally {
+      ctx.busy.done();
+    }
+  };
+
+  const section = el("section", { class: "file-section" }, [
+    el("div", { class: "file-section__head" }, [
+      el("span", { class: "file-section__idx" }, [`File ${fileIdx + 1}`]),
+      el("strong", { class: "file-section__name" }, [pdf.file.name]),
+      el("span", { class: "muted" }, [`${pdf.pages} pages · ${formatBytes(pdf.file.size)}`])
+    ]),
+    el("p", { class: "muted file-section__hint" }, [opts.hint]),
+    grid,
+    ...opts.rows
+  ]);
+
+  const api: PdfSectionApi = {
+    grid,
+    selected,
+    renderGrid,
+    relayoutFromOrder,
+    clearSelection: () => {
+      selected.clear();
+      syncSelectionClasses();
+      opts.onSelectionChange?.();
+    }
+  };
+
+  return { section, api };
+};
+
+const buildSplitSection = (
+  pdf: Entry,
+  fileIdx: number,
+  host: HTMLElement,
+  ctx: Pick<FeatureCtx, "pushHistory" | "busy">,
+  opts: {
+    rangeInput: HTMLInputElement;
+    splitBtn: HTMLButtonElement;
+    onSplit: () => Promise<void>;
+  }
+): void => {
+  const syncFromSelection = () => {
+    const pos = [...opts.rangeInputSelection]
+      .map((p) => pdf.order.indexOf(p) + 1)
+      .filter((p) => p > 0)
+      .sort((a, b) => a - b);
+    opts.rangeInput.value = pos.length ? pos.join(", ") : `1-${pdf.pages}`;
+  };
+  const { clearSelection } = buildPdfSection(
+    pdf,
+    fileIdx,
+    {
+      hint: "Drag pages to reorder (ranges follow the shown order) · click pages to pick ranges",
+      rows: [
+        el("div", { class: "row" }, [
+          el("span", { class: "muted" }, ["Split by"]),
+          opts.rangeInput,
+          opts.splitBtn
+        ])
+      ],
+      onSelectionChange: syncFromSelection,
+      onOrderChange: syncFromSelection
+    },
+    ctx
+  );
+};
+
 // ── Feature: Split ─────────────────────────────────────────────
 const splitFeature: Feature = {
   id: "split",
   label: "Split",
   mount(host, ctx) {
     const sectionsHost = el("div", { class: "file-sections" });
+    const rangeByPdf = new Map<Entry, string>();
+
+    const splitAllBtn = el("button", { class: "btn", type: "button" }, [
+      el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["content_cut"]),
+      "Split all files"
+    ]);
+
+    const runSplit = async (pdf: Entry, ranges: string, fileIdx: number) => {
+      const parts = await splitPdfByOrderRanges(pdf.data, pdf.order, ranges);
+      if (!parts.length) return;
+      const base = pdf.file.name.replace(/\.pdf$/i, "");
+      ctx.showResult(
+        parts.map((p, i) => ({
+          name: parts.length > 1 ? `${base}-part-${i + 1}.pdf` : `${base}.pdf`,
+          blob: blobFromBytes(p, "application/pdf"),
+          mime: "application/pdf"
+        }))
+      );
+      toast(`File ${fileIdx + 1} — ${parts.length} part(s) ready`, "success");
+    };
 
     const renderSections = () => {
-      if (!sectionsHost.isConnected) return;
       sectionsHost.replaceChildren();
       const list = pdfs();
+      splitAllBtn.disabled = list.length < 2;
       if (!list.length) {
         sectionsHost.appendChild(
           el("div", { class: "file-empty" }, [
             el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["content_cut"]),
-            "Add a PDF to split it by page ranges."
+            "Add PDFs to split them by page ranges."
           ])
         );
         return;
       }
       list.forEach((pdf, fileIdx) => {
-        const gridWrap = el("div", { class: "page-grid" });
         const rangeInput = el("input", {
           type: "text",
           class: "input",
           placeholder: "e.g. 1-3,5,8-9",
-          value: `1-${pdf.pages}`
+          value: rangeByPdf.get(pdf) ?? `1-${pdf.pages}`
         });
+        rangeInput.addEventListener("input", () => rangeByPdf.set(pdf, rangeInput.value));
         const splitBtn = el("button", { class: "btn", type: "button" }, [
           el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["content_cut"]),
           "Split"
         ]);
-        const state = newDragState();
-        const selected = new Set<number>();
-
-        const buildRangesFromSelection = () => {
-          const pos = [...selected].sort((a, b) => a - b).map((p) => `${p}`);
-          rangeInput.value = pos.length ? pos.join(", ") : `1-${pdf.pages}`;
-        };
-        const renderGrid = async () => {
-          gridWrap.replaceChildren();
-          ctx.busy.spin(`Rendering pages (${pdf.file.name})…`);
-          try {
-            const cells = new Map<number, HTMLElement>();
-            await pdfPageThumbs(pdf.data, (canvas, pageNum) => {
-              const cell = el("button", { class: "page-cell", type: "button" }, [canvas]);
-              cell.appendChild(el("span", { class: "page-cell__no" }, [String(pdf.order.indexOf(pageNum) + 1)]));
-              cell.addEventListener("click", () => {
-                if (!isCleanClick(state)) return;
-                const pos = pdf.order.indexOf(pageNum);
-                if (selected.has(pos)) selected.delete(pos);
-                else selected.add(pos);
-                cell.classList.toggle("page-cell--selected", selected.has(pos));
-                buildRangesFromSelection();
-              });
-              bindDnd(cell, gridWrap, state, () => pdf.order.indexOf(pageNum), (to) => {
-                const before = [...pdf.order];
-                const copy = [...pdf.order];
-                const [moved] = copy.splice(pdf.order.indexOf(pageNum), 1);
-                copy.splice(to, 0, moved);
-                pdf.order = copy;
-                const after = [...pdf.order];
-                ctx.pushHistory({
-                  label: "reordered pages",
-                  undo: () => { pdf.order = before; void renderGrid(); },
-                  redo: () => { pdf.order = after; void renderGrid(); }
-                });
-                void renderGrid();
-              });
-              moveButtons(cell, (delta) => {
-                const pos = pdf.order.indexOf(pageNum);
-                const to = pos + delta;
-                if (to < 0 || to >= pdf.order.length || to === pos) return;
-                const before = [...pdf.order];
-                const copy = [...pdf.order];
-                const [moved] = copy.splice(pos, 1);
-                copy.splice(to, 0, moved);
-                pdf.order = copy;
-                const after = [...pdf.order];
-                ctx.pushHistory({
-                  label: "reordered pages",
-                  undo: () => { pdf.order = before; void renderGrid(); },
-                  redo: () => { pdf.order = after; void renderGrid(); }
-                });
-                void renderGrid();
-              });
-              cells.set(pageNum, cell);
-            });
-            for (const pageNum of pdf.order) {
-              const c = cells.get(pageNum);
-              if (c) gridWrap.appendChild(c);
-            }
-          } catch {
-            gridWrap.replaceChildren(el("p", { class: "muted" }, ["Failed to render page previews."]));
-          } finally {
-            ctx.busy.done();
-          }
-        };
-
-        splitBtn.addEventListener("click", async () => {
-          if (!entries.includes(pdf)) return;
+        const { section, api } = buildSplitSection(pdf, fileIdx, sectionsHost, ctx, {
+          rangeInput,
+          splitBtn,
+          ...
+        });
+        const doSplit = async () => {
           splitBtn.disabled = true;
-          ctx.busy.spin("Splitting…");
+          ctx.busy.spin(`Splitting (${pdf.file.name})…`);
           try {
-            const parts = await splitPdfByOrderRanges(pdf.data, pdf.order, rangeInput.value);
-            const base = pdf.file.name.replace(/\.pdf$/i, "");
-            ctx.showResult(
-              parts.map((p, i) => ({
-                name: parts.length > 1 ? `${base}-part-${i + 1}.pdf` : `${base}.pdf`,
-                blob: blobFromBytes(p, "application/pdf"),
-                mime: "application/pdf"
-              }))
-            );
-            toast(`File ${fileIdx + 1} — ${parts.length} part(s) ready`, "success");
+            await runSplit(pdf, rangeInput.value, fileIdx);
           } catch (e) {
             toast(`Split failed: ${e instanceof Error ? e.message : e}`, "error");
           } finally {
             splitBtn.disabled = false;
             ctx.busy.done();
           }
-        });
-
-        sectionsHost.appendChild(
-          el("section", { class: "file-section" }, [
-            el("div", { class: "file-section__head" }, [
-              el("span", { class: "file-section__idx" }, [`File ${fileIdx + 1}`]),
-              el("strong", { class: "file-section__name" }, [pdf.file.name]),
-              el("span", { class: "muted" }, [`${pdf.pages} pages · ${formatBytes(pdf.file.size)}`])
-            ]),
-            el("p", { class: "muted file-section__hint" }, [
-              "Drag pages to reorder (ranges follow the shown order) · click pages to pick ranges"
-            ]),
-            gridWrap,
-            el("div", { class: "row" }, [
-              el("span", { class: "muted" }, ["Split by"]),
-              rangeInput,
-              splitBtn
-            ])
-          ])
-        );
-        void renderGrid();
+        };
+        splitBtn.addEventListener("click", () => void doSplit());
+        void api.renderGrid();
       });
     };
+
+    splitAllBtn.addEventListener("click", async () => {
+      const list = pdfs();
+      if (list.length < 2) return toast("Add 2+ PDFs to split all", "error");
+      splitAllBtn.disabled = true;
+      ctx.busy.spin("Splitting all files…");
+      try {
+        const out: Array<{ name: string; blob: Blob; mime: string }> = [];
+        for (let i = 0; i < list.length; i++) {
+          const pdf = list[i];
+          ctx.busy.progress(i / list.length, `File ${i + 1}/${list.length}`);
+          const ranges = rangeByMdf.get(pdf) ?? `1-${pdf.pages}`;
+          const parts = await splitPdfByOrderRanges(pdf.data, pdf.order, ranges);
+          const base = pdf.file.name.replace(/\.pdf$/i, "");
+          parts.forEach((p, j) =>
+            out.push({
+              name: parts.length > 1 ? `${base}-part-${j + 1}.pdf` : `${base}.pdf`,
+              blob: blobFromBytes(p, "application/pdf"),
+              mime: "application/pdf"
+            })
+          );
+        }
+        ctx.showResult(out);
+        toast(`Split all — ${out.length} part(s) ready`, "success");
+      } catch (e) {
+        toast(`Failed: ${e instanceof Error ? e.message : e}`, "error");
+      } finally {
+        splitAllBtn.disabled = pdfs().length < 2;
+        ctx.busy.done();
+      }
+    });
 
     onEntriesChange(renderSections);
     renderSections();
     host.append(
       el("p", { class: "tool-desc" }, [
-        "Preview each file's pages, reorder with drag & drop, then split per file."
+        "Per-file page previews — drag & move to reorder; ranges follow the shown order."
       ]),
       dropzoneEl(ctx, "PDF files — split applies per file"),
       fileListEl(),
+      el("div", { class: "row" }, [splitAllBtn]),
       sectionsHost
     );
-  }
-};
-
-// ── Feature: Organize (per-file) ──────────────────────────────────
-const organizeFeature: Feature = {
-  id: "organize",
-  label: "Organize",
-  mount(host, ctx) {
-    const sectionsHost = el("div", { class: "file-sections" });
-
-    const buildSection = (pdf: Entry, fileIdx: number): void => {
-      const gridWrap = el("div", { class: "page-grid" });
-      const selected = new Set<number>();
-      const state = newDragState();
-      const count = el("span", { class: "selection-bar__count" }, ["0 selected"]);
-      const clearBtn = el("button", { class: "btn btn--sm btn--ghost", type: "button", disabled: "" }, [
-        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["close"]),
-        "Clear"
-      ]);
-      const deleteBtn = el("button", { class: "btn btn--sm btn--danger", type: "button", disabled: "" }, [
-        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["delete"]),
-        "Delete selected"
-      ]);
-      const saveBtn = el("button", { class: "btn btn--primary", type: "button" }, [
-        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["download"]),
-        "Save this PDF"
-      ]);
-      const selectionBar = el("div", { class: "selection-bar" }, [count, clearBtn, deleteBtn]);
-      const section = el("section", { class: "file-section" }, [
-        el("div", { class: "file-section__head" }, [
-          el("span", { class: "file-section__idx" }, [`File ${fileIdx + 1}`]),
-          el("strong", { class: "file-section__name" }, [pdf.file.name]),
-          el("span", { class: "muted" }, [`${pdf.pages} pages · ${formatBytes(pdf.file.size)}`])
-        ]),
-        el("p", { class: "muted file-section__hint" }, [
-          "Drag pages to reorder · click to select · Undo/Redo anytime"
-        ]),
-        gridWrap,
-        selectionBar,
-        el("div", { class: "row file-section__actions" }, [saveBtn])
-      ]);
-      sectionsHost.appendChild(section);
-
-      const refreshSelectionBar = () => {
-        count.textContent = `${selected.size} selected`;
-        clearBtn.disabled = selected.size === 0;
-        deleteBtn.disabled = selected.size === 0;
-      };
-      void selectionBar;
-
-      const snapshot = () => ({ data: pdf.data, order: [...pdf.order], pages: pdf.pages });
-      const restore = (s: { data: Uint8Array; order: number[]; pages: number }) => {
-        pdf.data = s.data;
-        pdf.order = s.order;
-        pdf.pages = s.pages;
-        void renderGrid();
-      };
-
-      const renderGrid = async () => {
-        selected.clear();
-        refreshSelectionBar();
-        gridWrap.replaceChildren();
-        if (!pdf.pages) return;
-        ctx.busy.spin(`Rendering pages (${pdf.file.name})…`);
-        try {
-          const cells = new Map<number, HTMLElement>();
-          await pdfPageThumbs(pdf.data, (canvas, pageNum) => {
-            const cell = el("button", { class: "page-cell", type: "button" }, [canvas]);
-            cell.appendChild(el("span", { class: "page-cell__no" }, [String(pdf.order.indexOf(pageNum) + 1)]));
-            cell.appendChild(el("span", { class: "page-cell__check" }, [
-              el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["check"])
-            ]));
-            cell.addEventListener("click", () => {
-              if (!isCleanClick(state)) return;
-              if (selected.has(pageNum)) selected.delete(pageNum);
-              else selected.add(pageNum);
-              cell.classList.toggle("page-cell--selected", selected.has(pageNum));
-              refreshSelectionBar();
-            });
-            bindDnd(cell, gridWrap, state, () => pdf.order.indexOf(pageNum), (to) => {
-              const before = [...pdf.order];
-              const copy = [...pdf.order];
-              const [moved] = copy.splice(pdf.order.indexOf(pageNum), 1);
-              copy.splice(to, 0, moved);
-              pdf.order = copy;
-              const after = [...pdf.order];
-              ctx.pushHistory({
-                label: "reordered pages",
-                undo: () => { pdf.order = before; void renderGrid(); },
-                redo: () => { pdf.order = after; void renderGrid(); }
-              });
-              void renderGrid();
-            });
-            moveButtons(cell, (delta) => {
-              const pos = pdf.order.indexOf(pageNum);
-              const to = pos + delta;
-              if (to < 0 || to >= pdf.order.length || to === pos) return;
-              const before = [...pdf.order];
-              const copy = [...pdf.order];
-              const [moved] = copy.splice(pos, 1);
-              copy.splice(to, 0, moved);
-              pdf.order = copy;
-              const after = [...pdf.order];
-              ctx.pushHistory({
-                label: "reordered pages",
-                undo: () => { pdf.order = before; void renderGrid(); },
-                redo: () => { pdf.order = after; void renderGrid(); }
-              });
-              void renderGrid();
-            });
-            cells.set(pageNum, cell);
-          });
-          for (const pageNum of pdf.order) {
-            const c = cells.get(pageNum);
-            if (c) gridWrap.appendChild(c);
-          }
-        } catch {
-          gridWrap.replaceChildren(el("p", { class: "muted" }, ["Failed to render page previews."]));
-        } finally {
-          ctx.busy.done();
-        }
-      };
-
-      clearBtn.addEventListener("click", () => {
-        selected.clear();
-        refreshSelectionBar();
-        void renderGrid();
-      });
-
-      deleteBtn.addEventListener("click", async () => {
-        const doomed = [...selected].filter((p) => pdf.order.includes(p));
-        if (!doomed.length) return toast("Select pages to delete first", "error");
-        const before = snapshot();
-        const keep = pdf.order.filter((p) => !doomed.includes(p));
-        if (!keep.length) return toast("Cannot delete every page", "error");
-        ctx.busy.spin("Deleting pages…");
-        try {
-          pdf.data = await extractPages(pdf.data, keep.map((p) => p - 1));
-          pdf.order = keep;
-          pdf.pages = keep.length;
-          const after = snapshot();
-          ctx.pushHistory({
-            label: `deleted ${doomed.length} page(s)`,
-            undo: () => restore(before),
-            redo: () => restore(after)
-          });
-          toast(`Deleted ${doomed.length} page(s) — Undo available`, "success");
-        } catch (e) {
-          toast(`Delete failed: ${e instanceof Error ? e.message : e}`, "error");
-        } finally {
-          ctx.busy.done();
-          void renderGrid();
-        }
-      });
-
-      saveBtn.addEventListener("click", async () => {
-        ctx.busy.spin("Saving organized PDF…");
-        try {
-          const out = await extractPages(pdf.data, pdf.order.map((p) => p - 1));
-          ctx.showResult([
-            {
-              name: pdf.file.name.replace(/\.pdf$/i, "-organized.pdf"),
-              blob: blobFromBytes(out, "application/pdf"),
-              mime: "application/pdf"
-            }
-          ]);
-        } catch (e) {
-          toast(`Save failed: ${e instanceof Error ? e.message : e}`, "error");
-        } finally {
-          ctx.busy.done();
-        }
-      });
-    };
-
-    const renderSections = () => {
-      if (!sectionsHost.isConnected) return;
-      sectionsHost.replaceChildren();
-      const list = pdfs();
-      if (!list.length) {
-        sectionsHost.appendChild(
-          el("div", { class: "file-empty" }, [
-            el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["grid_view"]),
-            "Add one or more PDFs — drag pages to reorder and delete selected ones."
-          ])
-        );
-        return;
-      }
-      list.forEach(buildSection);
-    };
-
-    onEntriesChange(renderSections);
-    renderSections();
-    host.append(
-      el("p", { class: "tool-desc" }, [
-        "Dry-run before saving: drag to reorder, select & delete, Undo/Redo anytime."
-      ]),
-      dropzoneEl(ctx, "PDF — organize applies per file"),
-      sectionsHost
-    );
-  }
-};
-
-// ── Tool entry ────────────────────────────────────────
-
-export const mount = (root: HTMLElement): void => {
-  clear(root);
-  const shell = ToolShell(
-    "Merge & Split",
-    [mergeFeature, splitFeature, organizeFeature],
-    { onReset: () => (entries.length = 0) }
-  );
-  notifyActivity = shell.activity;
-  root.append(shell.node);
-
-  window.addEventListener(SAME_TOOL_EVENT, (e) => {
-    const featureId = (e as CustomEvent<{ featureId?: string }>).detail?.featureId;
-    if (featureId) shell.activate(featureId);
-  });
-
-  const incoming = takeHandoff("pdf-organizer");
-  if (incoming.length) {
-    void addFiles(incoming, { busy: noopBusy() });
-    toast(`${incoming.length} file(s) handed off — switch to a feature to use them`, "success");
   }
 };
