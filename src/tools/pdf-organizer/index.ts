@@ -142,6 +142,11 @@ const dropzoneEl = (ctx: FeatureCtx, hint: string): HTMLElement =>
 
 // ── drag & drop + live DOM reorder (NO re-render on move) ───
 
+interface GridState {
+  from: number;
+  suppressUntil: number; // ignore clicks right after a drag ends
+}
+
 const liveIndex = (grid: HTMLElement, cell: HTMLElement): number =>
   Array.from(grid.children).indexOf(cell);
 
@@ -165,9 +170,10 @@ const refreshPositions = (grid: HTMLElement): void => {
 const bindDnd = (
   cell: HTMLElement,
   grid: HTMLElement,
-  state: { from: number },
+  state: GridState,
   onDrop: (to: number) => void
 ): void => {
+  cell.draggable = true;
   cell.addEventListener("dragstart", () => {
     state.from = liveIndex(grid, cell);
     cell.classList.add("page-cell--dragging");
@@ -178,6 +184,7 @@ const bindDnd = (
       .querySelectorAll(".page-cell--drop")
       .forEach((c) => c.classList.remove("page-cell--drop"));
     state.from = -1;
+    state.suppressUntil = Date.now() + 350;
   });
   cell.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -188,8 +195,10 @@ const bindDnd = (
     e.preventDefault();
     cell.classList.remove("page-cell--drop");
     if (state.from < 0) return;
+    const to = liveIndex(grid, cell);
     state.from = -1;
-    onDrop(liveIndex(grid, cell));
+    state.suppressUntil = Date.now() + 350;
+    onDrop(to);
   });
 };
 
@@ -228,7 +237,7 @@ const mergeFeature: Feature = {
       el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["merge"]),
       "Merge in this order"
     ]);
-    const state = { from: -1 };
+    const state: GridState = { from: -1, suppressUntil: 0 };
     const itemCache = new Map<string, MergeItem>();
     let items: MergeItem[] = [];
     let cellByItem = new Map<MergeItem, HTMLElement>();
@@ -411,7 +420,7 @@ const buildPdfSection = (
   const grid = el("div", { class: "page-grid" });
   const cellByPage = new Map<number, HTMLElement>();
   const selected = new Set<number>();
-  const state = { from: -1 };
+  const state: GridState = { from: -1, suppressUntil: 0 };
 
   const syncSelectionClasses = () => {
     grid.querySelectorAll<HTMLElement>(".page-cell").forEach((c) => {
@@ -472,7 +481,7 @@ const buildPdfSection = (
           ])
         );
         cell.addEventListener("click", () => {
-          if (state.from >= 0) return;
+          if (state.from >= 0 || Date.now() < state.suppressUntil) return;
           if (selected.has(pageNum)) selected.delete(pageNum);
           else selected.add(pageNum);
           cell.classList.toggle("page-cell--selected", selected.has(pageNum));
