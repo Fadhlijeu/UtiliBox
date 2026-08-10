@@ -1,9 +1,10 @@
 import { el } from "../lib/dom";
 import { downloadBlob, formatBytes } from "../lib/files";
-import { fileThumb, pdfPageThumbs } from "../lib/thumb";
-import { handoffTargetsFor, stageHandoff } from "../lib/handoff";
+import { fileThumb, genericThumb, pdfPageThumbs } from "../lib/thumb";
 import { zipBlobs } from "../lib/zip";
 import { toast } from "./toast";
+import { timelineStore } from "../lib/timeline-store";
+import { createSendToMenu } from "./send-to-menu";
 
 export interface OutputFile {
   name: string;
@@ -92,8 +93,23 @@ export const OutputPanel = () => {
         ]);
         const fileRow = row.firstElementChild as HTMLElement;
 
-        void fileThumb(new File([f.blob], f.name, { type: f.mime })).then((t) => {
-          thumbSlot.replaceChildren(t.node);
+        void fileThumb(new File([f.blob], f.name, { type: f.mime }))
+          .then((t) => {
+            if (t?.node) thumbSlot.replaceChildren(t.node);
+            else thumbSlot.replaceChildren(genericThumb("description").node);
+          })
+          .catch(() => {
+            thumbSlot.replaceChildren(genericThumb("description").node);
+          });
+
+        // Record output file into timeline store
+        timelineStore.addEntry({
+          toolId: cur ?? "output",
+          featureId: "output",
+          fileName: f.name,
+          blob: f.blob,
+          mime: f.mime,
+          size: f.blob.size
         });
 
         // per-page preview strip for PDF outputs (verify before download)
@@ -125,31 +141,10 @@ export const OutputPanel = () => {
           pagesBtn.click();
         }
 
-        // send-to (oper file): filtered by mime, no self-loop
-        const targets = handoffTargetsFor(f.mime, cur, "");
-        if (targets.length) {
-          const select = el("select", { class: "input input--sm sendto", "aria-label": "Send to feature" });
-          select.appendChild(el("option", { value: "" }, ["Send to…"]));
-          for (const t of targets) {
-            select.appendChild(el("option", { value: `${t.toolId}|${t.featureId}` }, [t.label]));
-          }
-          select.addEventListener("change", () => {
-            const [toolId, featureId] = (select.value || "").split("|");
-            if (!toolId) {
-              select.value = "";
-              return;
-            }
-            stageHandoff(toolId, [new File([f.blob], f.name, { type: f.mime })]);
-            toast("File handed off", "success");
-            if (toolId === cur) {
-              window.dispatchEvent(new CustomEvent(SAME_TOOL_EVENT, { detail: { featureId } }));
-            } else {
-              location.hash = `#/tool/${toolId}`;
-            }
-            select.value = "";
-          });
-          fileRow.appendChild(select);
-        }
+        // multi-level send-to menu (oper file): filtered by mime, no self-loop
+        const sendToMenu = createSendToMenu(f, cur);
+        fileRow.appendChild(sendToMenu);
+
         return row;
       })
     );

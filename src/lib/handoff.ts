@@ -11,7 +11,9 @@ export interface HandoffTarget {
 
 /** Registry: every file-type tool/fitur that can receive incoming files. */
 export const HANDOFF_TARGETS: HandoffTarget[] = [
-  { toolId: "pdf-organizer", featureId: "merge", label: "Merge & Split · Merge", accepts: (m) => m === "application/pdf" || m === "image/png" || m === "image/jpeg" },
+  { toolId: "pdf-organizer", featureId: "merge", label: "Merge & Split → Merge", accepts: (m) => m === "application/pdf" || m === "image/png" || m === "image/jpeg" },
+  { toolId: "pdf-organizer", featureId: "split", label: "Merge & Split → Split", accepts: (m) => m === "application/pdf" },
+  { toolId: "pdf-organizer", featureId: "organize", label: "Merge & Split → Organize", accepts: (m) => m === "application/pdf" },
   { toolId: "pdf-compress", featureId: "core", label: "Compress", accepts: (m) => m === "application/pdf" },
   { toolId: "pdf-convert", featureId: "core", label: "Convert Document", accepts: (m) => m === "application/pdf" },
   { toolId: "ocr", featureId: "core", label: "OCR", accepts: (m) => m === "application/pdf" || m.startsWith("image/") },

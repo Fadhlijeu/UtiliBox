@@ -483,6 +483,7 @@ const buildPdfSection = (
   const cellByPage = new Map<number, HTMLElement>();
   const selected = new Set<number>();
   const state: GridState = { from: -1, suppressUntil: 0 };
+  let lastSelectedPage: number | null = null;
 
   const historyBar = createHistoryBar({
     baselineLabel: pdf.file.name,
@@ -506,33 +507,54 @@ const buildPdfSection = (
     });
   };
 
-  const applyOrderMove = (cell: HTMLElement, to: number) => {
-    const kids = Array.from(grid.children);
-    const from = kids.indexOf(cell);
-    if (from < 0 || to < 0 || to >= kids.length || from === to) return;
-    const before = [...pdf.order];
-    const copy = [...before];
-    const [moved] = copy.splice(from, 1);
-    copy.splice(to, 0, moved);
-    pdf.order = copy;
-    const after = [...pdf.order];
-    withScrollPreserved(() => {
-      grid.insertBefore(cell, grid.children[to < from ? to : to + 1]);
-      refreshPositions(grid);
-    });
-    opts.onOrderChange?.();
-    historyBar.pushHistory({
-      label: "reordered pages",
-      undo: () => {
-        pdf.order = before;
-        relayoutFromOrder();
-        opts.onOrderChange?.();
-      },
-      redo: () => {
-        pdf.order = after;
-        relayoutFromOrder();
-        opts.onOrderChange?.();
+  const togglePageSelection = (pageNum: number, isShift: boolean) => {
+    if (isShift && lastSelectedPage !== null && lastSelectedPage !== pageNum) {
+      const idxA = pdf.order.indexOf(lastSelectedPage);
+      const idxB = pdf.order.indexOf(pageNum);
+      if (idxA >= 0 && idxB >= 0) {
+        const min = Math.min(idxA, idxB);
+        const max = Math.max(idxA, idxB);
+        const range = pdf.order.slice(min, max + 1);
+        const shouldSelect = !selected.has(pageNum);
+        for (const p of range) {
+          if (shouldSelect) selected.add(p);
+          else selected.delete(p);
+        }
       }
+    } else {
+      if (selected.has(pageNum)) selected.delete(pageNum);
+      else selected.add(pageNum);
+    }
+    lastSelectedPage = pageNum;
+    syncSelectionClasses();
+    opts.onSelectionChange?.();
+  };
+
+  const applyOrderMove = (cell: HTMLElement, to: number) => {
+    withScrollPreserved(() => {
+      const from = reorderDom(grid, cell, to);
+      if (from < 0) return;
+      const before = [...pdf.order];
+      const copy = [...before];
+      const [moved] = copy.splice(from, 1);
+      copy.splice(to, 0, moved);
+      pdf.order = copy;
+      const after = [...pdf.order];
+      refreshPositions(grid);
+      opts.onOrderChange?.();
+      historyBar.pushHistory({
+        label: "reordered pages",
+        undo: () => {
+          pdf.order = before;
+          relayoutFromOrder();
+          opts.onOrderChange?.();
+        },
+        redo: () => {
+          pdf.order = after;
+          relayoutFromOrder();
+          opts.onOrderChange?.();
+        }
+      });
     });
   };
 
@@ -551,17 +573,19 @@ const buildPdfSection = (
             el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["check"])
           ])
         );
-        cell.addEventListener("click", () => {
+        cell.addEventListener("click", (e) => {
           if (state.from >= 0 || Date.now() < state.suppressUntil) return;
-          if (selected.has(pageNum)) selected.delete(pageNum);
-          else selected.add(pageNum);
-          cell.classList.toggle("page-cell--selected", selected.has(pageNum));
-          opts.onSelectionChange?.();
+          togglePageSelection(pageNum, e.shiftKey);
+        });
+        cell.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          if (state.from >= 0 || Date.now() < state.suppressUntil) return;
+          togglePageSelection(pageNum, true);
         });
         cell.addEventListener("keydown", (e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            cell.click();
+            togglePageSelection(pageNum, e.shiftKey);
           }
         });
         bindDnd(cell, grid, state, (to) => applyOrderMove(cell, to));

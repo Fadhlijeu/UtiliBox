@@ -1,4 +1,4 @@
-﻿import { el } from "./lib/dom";
+import { el } from "./lib/dom";
 import { renderHome } from "./pages/home";
 import { renderToolPage } from "./pages/tool";
 import { initTheme, toggleTheme } from "./lib/theme";
@@ -98,9 +98,12 @@ function bindGlobalSearch() {
   });
 }
 
+import { TimelineSidebar } from "./components/timeline-sidebar";
+
 export function bootstrap(): void {
   const root = document.getElementById("app")!;
   document.title = "UtiliBox";
+  root.appendChild(TimelineSidebar());
   root.appendChild(buildHeader());
   root.appendChild(el("main", { id: "app-main", class: "container" }));
   root.appendChild(
