@@ -1,6 +1,6 @@
 import { el, clear } from "../lib/dom";
 import { busy, type Busy } from "./busy";
-import { OutputPanel, type OutputFile } from "./output-panel";
+import { OutputPanel, type OutputFile, CLOSE_RESULT_EVENT } from "./output-panel";
 
 export interface Feature {
   id: string;
@@ -17,7 +17,7 @@ export interface HistoryCmd {
 
 export interface FeatureCtx {
   busy: Busy;
-  showResult: (files: OutputFile[]) => void;
+  showResult: (files: OutputFile[], sourceFeatureId?: string, sourceLabel?: string) => void;
   /** push a reversible step; undo/redo buttons appear in the top bar */
   pushHistory: (cmd: HistoryCmd) => void;
   /** wipe history + result view (fresh start) */
@@ -77,8 +77,8 @@ export const ToolShell = (
 
   const ctx: FeatureCtx = {
     busy: progress,
-    showResult(files) {
-      result.show(files);
+    showResult(files, sourceFeatureId?, sourceLabel?) {
+      result.show(files, sourceFeatureId, sourceLabel);
       workspace.classList.add("hidden");
       resultWrap.hidden = false;
       window.scrollTo(0, 0);
@@ -133,6 +133,11 @@ export const ToolShell = (
   root.appendChild(resultWrap);
 
   mountFeature(current);
+
+  window.addEventListener(CLOSE_RESULT_EVENT, () => {
+    closeResult();
+    window.scrollTo(0, 0);
+  });
 
   return {
     node: root,

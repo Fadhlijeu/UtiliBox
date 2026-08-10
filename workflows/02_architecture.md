@@ -135,7 +135,7 @@ src/
   main.ts
   router.ts
   styles/ (tokens.css, global.css)
-  components/ (dropzone, toast, progress, code, badge)
+  components/ (dropzone, toast, progress, code, badge, tool-shell, output-panel, send-to-menu, history-bar, timeline-sidebar)
   tools/
     pdf-convert/
     pdf-organizer/
@@ -168,7 +168,39 @@ src/
     code-assist/
     prompt-beautify/
     humanizer/
-  lib/ (engine wrappers)
+  lib/ (engine wrappers, handoff, timeline-store, files, dom, thumb, zip)
   config/tools.ts (registry metadata)
 tests/
 ```
+
+---
+
+## 8. Cross-Tool Handoff & Timeline Architecture
+
+### 8.1 Shared File Model
+- Files uploaded into a multi-feature tool (e.g. pdf-organizer) are stored in a **shared in-memory registry** (`entries[]`).
+- All features (Merge, Split, Organize) read/write the same `entries[]`, so a file uploaded once is available across tabs without re-upload.
+- Each feature produces outputs via `ctx.showResult(files, sourceFeatureId, sourceLabel)`.
+
+### 8.2 Send-To Handoff
+- Output files can be handed off to any tool/feature that accepts the file MIME type.
+- `stageHandoff(toolId, files)` stores files in a transient pending map keyed by target toolId.
+- On target tool mount (or same-tool feature activate), `takeHandoff(toolId)` consumes pending files and loads them.
+- After handoff, `CLOSE_RESULT_EVENT` closes the source result view and activates the target workspace.
+- The send-to dropdown **excludes the currently active feature** to prevent self-loops.
+
+### 8.3 Timeline History
+- Every output and handoff is logged as a `TimelineEntry` with:
+  - `lineage: "main"` — primary flow (upload → feature output)
+  - `lineage: "branch"` — offshoot (output sent to alternate tool/feature)
+  - `parentId` — links branches back to their source entry
+  - `sourceLabel` / `targetLabel` — human-readable routing labels
+- Clicking a timeline entry restores that file state, closes any open result view, and activates the target feature workspace.
+- Undo/Redo checkpoints store explicit action labels (e.g. "Moved page 3 to position 1", "Removed 2 page(s) (3, 4)").
+
+### 8.4 Reusable Patterns
+- **ToolShell**: wraps any multi-feature tool with tabs, workspace, result view, and undo/redo.
+- **OutputPanel**: renders output files with preview, download, page strip, and send-to menu.
+- **createSendToMenu**: builds a filtered, viewport-aware dropdown for cross-tool handoffs.
+- **createHistoryBar**: explicit undo/redo checkpoint list with keyboard-accessible menus.
+- **TimelineSidebar**: left drawer showing main/branch lineage with restore capability.

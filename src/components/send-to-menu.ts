@@ -1,6 +1,6 @@
 import { el } from "../lib/dom";
 import { handoffTargetsFor, stageHandoff, type HandoffTarget } from "../lib/handoff";
-import { SAME_TOOL_EVENT, type OutputFile } from "./output-panel";
+import { SAME_TOOL_EVENT, CLOSE_RESULT_EVENT, type OutputFile } from "./output-panel";
 import { timelineStore } from "../lib/timeline-store";
 import { toast } from "./toast";
 
@@ -64,13 +64,18 @@ export const createSendToMenu = (
     const sourceLabel = currentToolId ?? "Tool";
     const targetLabel = t.label.includes("→") ? t.label.split("→")[1]?.trim() ?? t.featureId : t.featureId;
 
-    // Record in global timeline history as branch lineage
+    window.dispatchEvent(new CustomEvent(CLOSE_RESULT_EVENT));
+
+    const entries = timelineStore.getEntries();
+    const parentEntry = entries.find((e) => e.fileName === file.name && e.toolId === (currentToolId ?? ""));
+
     timelineStore.addEntry({
       toolId: t.toolId,
       featureId: t.featureId,
       sourceLabel,
       targetLabel,
       lineage: "branch",
+      parentId: parentEntry?.id ?? null,
       fileName: file.name,
       blob: file.blob,
       mime: file.mime,
@@ -155,10 +160,11 @@ export const createSendToMenu = (
     const rect = trigger.getBoundingClientRect();
     const menuWidth = 220;
     const margin = 12;
+    const menuHeight = menuItems.length * 40 + 16;
 
     let top = rect.bottom + 4;
-    if (top + 200 > window.innerHeight - margin) {
-      top = Math.max(margin, rect.top - 200 - 4);
+    if (top + menuHeight > window.innerHeight - margin) {
+      top = Math.max(margin, rect.top - menuHeight - 4);
     }
 
     const left = Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin));

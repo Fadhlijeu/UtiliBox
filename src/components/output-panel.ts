@@ -10,6 +10,8 @@ export interface OutputFile {
   name: string;
   blob: Blob;
   mime: string;
+  sourceFeatureId?: string;
+  sourceLabel?: string;
 }
 
 const currentToolId = (): string | undefined =>
@@ -17,6 +19,7 @@ const currentToolId = (): string | undefined =>
 
 /** Handoff to a feature of the same tool → notify shell via custom event. */
 const SAME_TOOL_EVENT = "utilibox:feature-handoff";
+const CLOSE_RESULT_EVENT = "utilibox:close-result";
 
 /**
  * Output panel — appears only when there IS output (never idle chrome).
@@ -36,7 +39,7 @@ export const OutputPanel = () => {
     urls = [];
   };
 
-  const show = (files: OutputFile[]) => {
+  const show = (files: OutputFile[], sourceFeatureId?: string, sourceLabel?: string) => {
     clearOld();
     const cur = currentToolId();
     const headNodes: Node[] = [
@@ -105,11 +108,13 @@ export const OutputPanel = () => {
         // Record output file into timeline store
         timelineStore.addEntry({
           toolId: cur ?? "output",
-          featureId: "output",
+          featureId: sourceFeatureId ?? f.sourceFeatureId ?? "output",
+          sourceLabel: sourceLabel ?? f.sourceLabel,
           fileName: f.name,
           blob: f.blob,
           mime: f.mime,
-          size: f.blob.size
+          size: f.blob.size,
+          lineage: "main"
         });
 
         // per-page preview strip for PDF outputs (verify before download)
@@ -142,7 +147,7 @@ export const OutputPanel = () => {
         }
 
         // multi-level send-to menu (oper file): filtered by mime, no self-loop
-        const sendToMenu = createSendToMenu(f, cur);
+        const sendToMenu = createSendToMenu(f, cur, sourceFeatureId);
         fileRow.appendChild(sendToMenu);
 
         return row;
@@ -239,4 +244,4 @@ const openPreview = (f: OutputFile, url: string) => {
 };
 
 // shared event name export for tools
-export { SAME_TOOL_EVENT }; // re-export for convenience
+export { SAME_TOOL_EVENT, CLOSE_RESULT_EVENT };

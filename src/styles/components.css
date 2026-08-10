@@ -1007,6 +1007,8 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   flex-direction: column;
   gap: 2px;
   min-width: 200px;
+  max-height: 320px;
+  overflow-y: auto;
   padding: var(--space-1);
   background: var(--color-paper-1);
   border: 1px solid var(--color-border-strong);
@@ -1033,6 +1035,10 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   transition: background var(--duration-fast);
 }
 
+.sendto-menu__item--has-sub {
+  position: relative;
+}
+
 .sendto-menu__item:hover,
 .sendto-menu__item--active {
   background: var(--color-paper-2);
@@ -1054,9 +1060,11 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 .sendto-submenu {
   display: none;
   position: absolute;
-  top: -4px;
-  left: 100%;
+  top: 100%;
+  left: 0;
   min-width: 180px;
+  max-height: 240px;
+  overflow-y: auto;
   padding: var(--space-1);
   background: var(--color-paper-1);
   border: 1px solid var(--color-border-strong);

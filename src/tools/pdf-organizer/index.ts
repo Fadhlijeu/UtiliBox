@@ -221,9 +221,13 @@ const bindDnd = (
   onDrop: (to: number) => void
 ): void => {
   cell.draggable = true;
-  cell.addEventListener("dragstart", () => {
+  cell.addEventListener("dragstart", (e) => {
     state.from = liveIndex(grid, cell);
     cell.classList.add("page-cell--dragging");
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", "");
+    }
   });
   cell.addEventListener("dragend", () => {
     cell.classList.remove("page-cell--dragging");
@@ -235,6 +239,9 @@ const bindDnd = (
   });
   cell.addEventListener("dragover", (e) => {
     e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = "move";
+    }
     cell.classList.add("page-cell--drop");
   });
   cell.addEventListener("dragleave", () => cell.classList.remove("page-cell--drop"));
@@ -333,8 +340,10 @@ const mergeFeature: Feature = {
         copy.splice(to, 0, moved);
         items = copy;
         const after = cloneItems();
+        const movedItem = items[to];
+        const pageLabel = movedItem?.page !== null ? `page ${movedItem.page}` : "image";
         mergeHistory.pushHistory({
-          label: "reordered pages",
+          label: `Moved ${pageLabel} to position ${to + 1}`,
           undo: () => {
             items = before;
             relayoutFromCache();
@@ -421,13 +430,19 @@ const mergeFeature: Feature = {
         }
         ctx.busy.progress(0.95, "Assembling PDF");
         const out = await mergePdfs(parts);
-        ctx.showResult([
-          {
-            name: `merged-${entries.length}-files.pdf`,
-            blob: blobFromBytes(out, "application/pdf"),
-            mime: "application/pdf"
-          }
-        ]);
+        ctx.showResult(
+          [
+            {
+              name: `merged-${entries.length}-files.pdf`,
+              blob: blobFromBytes(out, "application/pdf"),
+              mime: "application/pdf",
+              sourceFeatureId: "merge",
+              sourceLabel: "Merge"
+            }
+          ],
+          "merge",
+          "Merge"
+        );
         toast(`Merge ready — ${items.length} page(s)`, "success");
       } catch (e) {
         toast(`Merge failed: ${e instanceof Error ? e.message : e}`, "error");
@@ -540,10 +555,11 @@ const buildPdfSection = (
       copy.splice(to, 0, moved);
       pdf.order = copy;
       const after = [...pdf.order];
+      const movedPage = pdf.order[to] ?? copy[to];
       refreshPositions(grid);
       opts.onOrderChange?.();
       historyBar.pushHistory({
-        label: "reordered pages",
+        label: `Moved page ${movedPage ?? from} to position ${to + 1}`,
         undo: () => {
           pdf.order = before;
           relayoutFromOrder();
@@ -698,8 +714,12 @@ const splitFeature: Feature = {
         parts.map((p, i) => ({
           name: parts.length > 1 ? `${base}-part-${i + 1}.pdf` : `${base}.pdf`,
           blob: blobFromBytes(p, "application/pdf"),
-          mime: "application/pdf"
-        }))
+          mime: "application/pdf",
+          sourceFeatureId: "split",
+          sourceLabel: "Split"
+        })),
+        "split",
+        "Split"
       );
       toast(`File ${fileIdx + 1} — ${parts.length} part(s) ready`, "success");
     };
@@ -756,7 +776,7 @@ const splitFeature: Feature = {
       splitAllBtn.disabled = true;
       ctx.busy.spin("Splitting all files…");
       try {
-        const out: Array<{ name: string; blob: Blob; mime: string }> = [];
+        const out: Array<{ name: string; blob: Blob; mime: string; sourceFeatureId?: string; sourceLabel?: string }> = [];
         for (let i = 0; i < list.length; i++) {
           const pdf = list[i];
           ctx.busy.progress(i / list.length, `File ${i + 1}/${list.length}`);
@@ -767,11 +787,13 @@ const splitFeature: Feature = {
             out.push({
               name: parts.length > 1 ? `${base}-part-${j + 1}.pdf` : `${base}.pdf`,
               blob: blobFromBytes(p, "application/pdf"),
-              mime: "application/pdf"
+              mime: "application/pdf",
+              sourceFeatureId: "split",
+              sourceLabel: "Split"
             })
           );
         }
-        ctx.showResult(out);
+        ctx.showResult(out, "split", "Split");
         toast(`Split all — ${out.length} part(s) ready`, "success");
       } catch (e) {
         toast(`Failed: ${e instanceof Error ? e.message : e}`, "error");
@@ -867,7 +889,7 @@ const organizeFeature: Feature = {
         const afterData = await extractPages(pdf.data, keep.map((p) => p - 1));
         const afterOrder = [...keep];
         api.historyBar.pushHistory({
-          label: `deleted ${doomed.length} page(s)`,
+          label: `Removed ${doomed.length} page(s) (${doomed.sort((a, b) => a - b).join(", ")})`,
           undo: () => {
             pdf.data = beforeData;
             pdf.order = beforeOrder;
@@ -894,13 +916,19 @@ const organizeFeature: Feature = {
         ctx.busy.spin(`Saving (${pdf.file.name})…`);
         try {
           const out = await extractPages(pdf.data, pdf.order.map((p) => p - 1));
-          ctx.showResult([
-            {
-              name: pdf.file.name.replace(/\.pdf$/i, "-organized.pdf"),
-              blob: blobFromBytes(out, "application/pdf"),
-              mime: "application/pdf"
-            }
-          ]);
+          ctx.showResult(
+            [
+              {
+                name: pdf.file.name.replace(/\.pdf$/i, "-organized.pdf"),
+                blob: blobFromBytes(out, "application/pdf"),
+                mime: "application/pdf",
+                sourceFeatureId: "organize",
+                sourceLabel: "Organize"
+              }
+            ],
+            "organize",
+            "Organize"
+          );
           toast("Organized PDF ready", "success");
         } catch (e) {
           toast(`Save failed: ${e instanceof Error ? e.message : e}`, "error");
@@ -936,7 +964,7 @@ const organizeFeature: Feature = {
       organizeAllBtn.disabled = true;
       ctx.busy.spin("Organizing all files…");
       try {
-        const out: Array<{ name: string; blob: Blob; mime: string }> = [];
+        const out: Array<{ name: string; blob: Blob; mime: string; sourceFeatureId?: string; sourceLabel?: string }> = [];
         for (let i = 0; i < list.length; i++) {
           const pdf = list[i];
           ctx.busy.progress(i / list.length, `File ${i + 1}/${list.length}`);
@@ -944,10 +972,12 @@ const organizeFeature: Feature = {
           out.push({
             name: pdf.file.name.replace(/\.pdf$/i, "-organized.pdf"),
             blob: blobFromBytes(data, "application/pdf"),
-            mime: "application/pdf"
+            mime: "application/pdf",
+            sourceFeatureId: "organize",
+            sourceLabel: "Organize"
           });
         }
-        ctx.showResult(out);
+        ctx.showResult(out, "organize", "Organize");
         toast(`Organized ${out.length} file(s)`, "success");
       } catch (e) {
         toast(`Failed: ${e instanceof Error ? e.message : e}`, "error");
@@ -985,7 +1015,14 @@ export const mount = (root: HTMLElement): void => {
 
   window.addEventListener(SAME_TOOL_EVENT, (e) => {
     const featureId = (e as CustomEvent<{ featureId?: string }>).detail?.featureId;
-    if (featureId) shell.activate(featureId);
+    if (featureId) {
+      shell.activate(featureId);
+      const incoming = takeHandoff("pdf-organizer");
+      if (incoming.length) {
+        void addFiles(incoming, { busy: noopBusy() });
+        toast(`${incoming.length} file(s) handed off — switch to a feature to use them`, "success");
+      }
+    }
   });
 
   const incoming = takeHandoff("pdf-organizer");

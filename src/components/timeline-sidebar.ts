@@ -2,7 +2,7 @@ import { el } from "../lib/dom";
 import { downloadBlob } from "../lib/files";
 import { fileThumb } from "../lib/thumb";
 import { stageHandoff } from "../lib/handoff";
-import { SAME_TOOL_EVENT } from "./output-panel";
+import { SAME_TOOL_EVENT, CLOSE_RESULT_EVENT } from "./output-panel";
 import { timelineStore, type TimelineEntry } from "../lib/timeline-store";
 import { toast } from "./toast";
 
@@ -104,7 +104,9 @@ export const TimelineSidebar = (): HTMLElement => {
           ? entry.targetLabel
             ? `${entry.sourceLabel} ➔ ${entry.targetLabel}`
             : entry.sourceLabel
-          : entry.featureId;
+          : entry.targetLabel
+            ? entry.targetLabel
+            : entry.featureId;
 
         const lineageTag = entry.lineage === "branch" ? "Branch" : "Main";
 
@@ -127,6 +129,7 @@ export const TimelineSidebar = (): HTMLElement => {
 
         const restoreState = () => {
           stageHandoff(entry.toolId, [file]);
+          window.dispatchEvent(new CustomEvent(CLOSE_RESULT_EVENT));
           toast(`Restored: ${entry.fileName} (${routeLabel})`, "info");
           const curTool = location.hash.match(/^#\/tool\/([a-z0-9-]+)/)?.[1];
           if (curTool === entry.toolId) {
