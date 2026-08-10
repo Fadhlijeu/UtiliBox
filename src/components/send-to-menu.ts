@@ -97,6 +97,7 @@ export const createSendToMenu = (
       sourceLabel,
       targetLabel,
       lineage: "branch",
+      branchType: "action",
       fileName: file.name,
       blob: file.blob,
       mime: file.mime,

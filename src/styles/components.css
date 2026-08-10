@@ -1241,10 +1241,17 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   border: 1px solid oklch(50% 0.2 150 / 0.4);
 }
 
-.timeline-badge--branch {
+.timeline-badge--branch,
+.timeline-badge--branch-action {
   background: oklch(60% 0.2 270 / 0.25);
-  color: oklch(75% 0.2 270);
+  color: oklch(78% 0.2 270);
   border: 1px solid oklch(60% 0.2 270 / 0.4);
+}
+
+.timeline-badge--branch-edit {
+  background: oklch(65% 0.18 75 / 0.25);
+  color: oklch(82% 0.18 75);
+  border: 1px solid oklch(65% 0.18 75 / 0.4);
 }
 
 .timeline-card__time {

@@ -167,7 +167,14 @@ export const TimelineSidebar = (): HTMLElement => {
       ]
     );
 
-    const badgeText = isBranch ? branchLabel ?? "↳ Branch" : "🟢 Main";
+    const isEditBranch = entry.branchType === "edit";
+    const defaultBranchTag = isEditBranch ? "↳ ✏️ Edit" : "↳ 🚀 Handoff";
+    const badgeText = isBranch ? (branchLabel ? `${branchLabel} (${isEditBranch ? "Edit" : "Handoff"})` : defaultBranchTag) : "🟢 Main";
+    const badgeClass = isBranch
+      ? isEditBranch
+        ? "timeline-badge--branch-edit"
+        : "timeline-badge--branch-action"
+      : "timeline-badge--main";
 
     const card = el(
       "div",
@@ -181,7 +188,7 @@ export const TimelineSidebar = (): HTMLElement => {
         el("div", { class: "timeline-card__head" }, [
           el(
             "span",
-            { class: `timeline-badge ${isBranch ? "timeline-badge--branch" : "timeline-badge--main"}` },
+            { class: `timeline-badge ${badgeClass}` },
             [badgeText]
           ),
           el("span", { class: "timeline-card__time muted" }, [entry.timestamp])
@@ -235,6 +242,7 @@ export const TimelineSidebar = (): HTMLElement => {
     );
 
     const restoreState = () => {
+      timelineStore.setActiveParent(entry.id, "edit");
       stageHandoff(entry.toolId, inputs);
       toast(`Restored history: ${entry.fileName}`, "info");
 
