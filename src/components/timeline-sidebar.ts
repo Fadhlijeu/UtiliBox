@@ -1,5 +1,5 @@
 import { el } from "../lib/dom";
-import { downloadBlob } from "../lib/files";
+import { downloadBlob, formatBytes } from "../lib/files";
 import { stageHandoff } from "../lib/handoff";
 import { SAME_TOOL_EVENT } from "./output-panel";
 import { timelineStore, type TimelineEntry } from "../lib/timeline-store";
@@ -52,7 +52,7 @@ export const TimelineSidebar = (): HTMLElement => {
 
   const body = el("div", { class: "timeline-sidebar__body" }, [
     el("p", { class: "muted timeline-sidebar__hint" }, [
-      "Main outputs & branch lineage history. Click any card to rollback & edit."
+      "Click 'Restore & Edit' to load files back into workspace. Click input file pills to preview."
     ]),
     listContainer
   ]);
@@ -80,12 +80,16 @@ export const TimelineSidebar = (): HTMLElement => {
     return "build";
   };
 
-  const renderCard = (entry: TimelineEntry, isBranch: boolean): HTMLElement => {
+  const renderCard = (
+    entry: TimelineEntry,
+    isBranch: boolean,
+    branchLabel?: string
+  ): HTMLElement => {
     const file = new File([entry.blob], entry.fileName, { type: entry.mime });
 
     const downloadBtn = el(
       "button",
-      { class: "btn btn--sm btn--ghost pipeline-card__icon-btn", type: "button", title: "Download output" },
+      { class: "btn btn--sm btn--ghost timeline-card__icon-btn", type: "button", title: "Download output" },
       [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["download"])]
     );
     downloadBtn.addEventListener("click", (e) => {
@@ -96,18 +100,18 @@ export const TimelineSidebar = (): HTMLElement => {
 
     const previewBtn = el(
       "button",
-      { class: "btn btn--sm btn--ghost pipeline-card__icon-btn", type: "button", title: "Quick Preview" },
+      { class: "btn btn--sm btn--ghost timeline-card__icon-btn", type: "button", title: "Preview output" },
       [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["visibility"])]
     );
     previewBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      openQuickPreview(entry);
+      openFilePreview(file);
     });
 
     const deleteBtn = el(
       "button",
       {
-        class: "btn btn--sm btn--ghost pipeline-card__icon-btn pipeline-card__icon-btn--delete",
+        class: "btn btn--sm btn--ghost timeline-card__icon-btn timeline-card__icon-btn--delete",
         type: "button",
         title: "Delete from timeline"
       },
@@ -119,88 +123,109 @@ export const TimelineSidebar = (): HTMLElement => {
       toast(`Removed ${entry.fileName} from timeline`, "info");
     });
 
-    const inputs = entry.inputFiles ?? [];
-    const inputCount = inputs.length > 0 ? inputs.length : 1;
-    const inputNames = inputs.length > 0 ? inputs.map((f) => f.name).join(", ") : entry.fileName;
-    const inputLabel = inputs.length > 1 ? `${inputCount} Files` : (inputs[0]?.name ?? entry.fileName);
+    // Inputs: list of interactive pills
+    const inputs = entry.inputFiles && entry.inputFiles.length > 0 ? entry.inputFiles : [file];
+    const inputPills = inputs.map((f) => {
+      const pill = el(
+        "button",
+        {
+          class: "timeline-file-pill",
+          type: "button",
+          title: `${f.name} (${formatBytes(f.size)}) — Click to preview`
+        },
+        [
+          el("span", { class: "material-symbols-outlined timeline-file-pill__icon" }, ["description"]),
+          el("span", { class: "timeline-file-pill__name" }, [f.name])
+        ]
+      );
+      pill.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openFilePreview(f);
+      });
+      return pill;
+    });
 
     const actionName = entry.sourceLabel ?? entry.featureId ?? "Process";
     const actionIcon = getActionIcon(entry.featureId);
 
     const restoreBtn = el(
       "button",
-      { class: "btn btn--sm btn--primary pipeline-btn--restore", type: "button" },
+      { class: "btn btn--sm btn--primary timeline-btn--restore", type: "button" },
       [
         el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["restore"]),
         "Restore & Edit"
       ]
     );
 
+    const badgeText = isBranch ? branchLabel ?? "↳ Branch" : "🟢 Main";
+
     const card = el(
       "div",
       {
-        class: `pipeline-card ${isBranch ? "pipeline-card--branch" : "pipeline-card--main"}`,
+        class: `timeline-card ${isBranch ? "timeline-card--branch" : "timeline-card--main"}`,
         tabindex: "0",
         role: "button"
       },
       [
         // Head bar: lineage badge + timestamp
-        el("div", { class: "pipeline-card__head" }, [
+        el("div", { class: "timeline-card__head" }, [
           el(
             "span",
-            { class: `pipeline-badge ${isBranch ? "pipeline-badge--branch" : "pipeline-badge--main"}` },
-            [isBranch ? "↳ Branch" : "🟢 Main"]
+            { class: `timeline-badge ${isBranch ? "timeline-badge--branch" : "timeline-badge--main"}` },
+            [badgeText]
           ),
-          el("span", { class: "pipeline-card__time muted" }, [entry.timestamp])
+          el("span", { class: "timeline-card__time muted" }, [entry.timestamp])
         ]),
 
-        // Visual Pipeline Chain: Input -> Action -> Output
-        el("div", { class: "pipeline-chain" }, [
-          // Step 1: Input
-          el("div", { class: "pipeline-step pipeline-step--input", title: `Input: ${inputNames}` }, [
-            el("span", { class: "material-symbols-outlined pipeline-step__icon" }, ["folder_open"]),
-            el("span", { class: "pipeline-step__title" }, ["Input"]),
-            el("span", { class: "pipeline-step__desc" }, [inputLabel])
+        // Section 1: SOURCE FILES (Pill Grid)
+        el("div", { class: "timeline-card__section" }, [
+          el("div", { class: "timeline-card__section-head" }, [
+            el("span", { class: "material-symbols-outlined" }, ["folder_open"]),
+            el("span", { class: "timeline-card__section-label" }, [
+              `SOURCE (${inputs.length} File${inputs.length > 1 ? "s" : ""})`
+            ])
           ]),
+          el("div", { class: "timeline-pills-grid" }, inputPills)
+        ]),
 
-          // Arrow 1
-          el("div", { class: "pipeline-arrow" }, [
-            el("span", { class: "material-symbols-outlined" }, ["arrow_forward"])
+        // Section 2: ACTION
+        el("div", { class: "timeline-card__section" }, [
+          el("div", { class: "timeline-card__section-head" }, [
+            el("span", { class: "material-symbols-outlined" }, ["bolt"]),
+            el("span", { class: "timeline-card__section-label" }, ["ACTION"])
           ]),
+          el("div", { class: "timeline-action-pill" }, [
+            el("span", { class: "material-symbols-outlined" }, [actionIcon]),
+            el("span", { class: "timeline-action-pill__name" }, [actionName]),
+            entry.pages ? el("span", { class: "timeline-action-pill__meta" }, [`${entry.pages} pg`]) : null
+          ].filter((n): n is HTMLElement => !!n))
+        ]),
 
-          // Step 2: Action
-          el("div", { class: "pipeline-step pipeline-step--action" }, [
-            el("span", { class: "material-symbols-outlined pipeline-step__icon" }, [actionIcon]),
-            el("span", { class: "pipeline-step__title" }, [actionName]),
-            el("span", { class: "pipeline-step__desc" }, [entry.pages ? `${entry.pages} pg` : "Ready"])
+        // Section 3: OUTPUT FILE
+        el("div", { class: "timeline-card__section" }, [
+          el("div", { class: "timeline-card__section-head" }, [
+            el("span", { class: "material-symbols-outlined" }, ["output"]),
+            el("span", { class: "timeline-card__section-label" }, ["OUTPUT"])
           ]),
-
-          // Arrow 2
-          el("div", { class: "pipeline-arrow" }, [
-            el("span", { class: "material-symbols-outlined" }, ["arrow_forward"])
-          ]),
-
-          // Step 3: Output
-          el("div", { class: "pipeline-step pipeline-step--output", title: `Output: ${entry.fileName}` }, [
-            el("span", { class: "material-symbols-outlined pipeline-step__icon" }, ["description"]),
-            el("span", { class: "pipeline-step__title" }, ["Output"]),
-            el("span", { class: "pipeline-step__desc" }, [entry.fileName])
+          el("div", { class: "timeline-output-box" }, [
+            el("span", { class: "material-symbols-outlined timeline-output-box__icon" }, ["task_complete"]),
+            el("div", { class: "timeline-output-box__info" }, [
+              el("span", { class: "timeline-output-box__name", title: entry.fileName }, [entry.fileName]),
+              el("span", { class: "timeline-output-box__size muted" }, [entry.formattedSize])
+            ])
           ])
         ]),
 
         // Card footer: Restore & Edit button + Quick Actions
-        el("div", { class: "pipeline-card__footer" }, [
+        el("div", { class: "timeline-card__footer" }, [
           restoreBtn,
-          el("div", { class: "pipeline-card__quick-actions" }, [downloadBtn, previewBtn, deleteBtn])
+          el("div", { class: "timeline-card__quick-actions" }, [downloadBtn, previewBtn, deleteBtn])
         ])
       ]
     );
 
     const restoreState = () => {
-      const activeInputFiles =
-        entry.inputFiles && entry.inputFiles.length > 0 ? entry.inputFiles : [file];
-
-      stageHandoff(entry.toolId, activeInputFiles);
+      stageHandoff(entry.toolId, inputs);
       toast(`Restored history: ${entry.fileName}`, "info");
 
       const outputFiles = entry.outputFiles ?? [
@@ -228,7 +253,7 @@ export const TimelineSidebar = (): HTMLElement => {
             detail: {
               toolId: entry.toolId,
               featureId: entry.featureId,
-              inputFiles: activeInputFiles,
+              inputFiles: inputs,
               outputFiles
             }
           })
@@ -280,16 +305,29 @@ export const TimelineSidebar = (): HTMLElement => {
       }
     });
 
+    // Helper to recursively collect all branch descendants of a parent node
+    const getBranchDescendants = (parentId: string, depth = 1): Array<{ entry: TimelineEntry; tag: string }> => {
+      const result: Array<{ entry: TimelineEntry; tag: string }> = [];
+      const children = childrenMap.get(parentId) ?? [];
+      children.forEach((child, idx) => {
+        const tag = `↳ Branch #${depth}.${idx + 1}`;
+        result.push({ entry: child, tag });
+        result.push(...getBranchDescendants(child.id, depth + 1));
+      });
+      return result;
+    };
+
     const renderedNodes: HTMLElement[] = [];
 
-    mainEntries.forEach((mainItem) => {
-      const mainCard = renderCard(mainItem, false);
-      const branches = childrenMap.get(mainItem.id) ?? [];
+    mainEntries.forEach((mainItem, mIdx) => {
+      const mainCard = renderCard(mainItem, false, `🟢 Main #${mIdx + 1}`);
+      const branchDescendants = getBranchDescendants(mainItem.id);
 
-      if (!branches.length) {
+      if (!branchDescendants.length) {
         renderedNodes.push(mainCard);
       } else {
-        const branchCards = branches.map((b) => renderCard(b, true));
+        // Render all branch descendants inside a single indented container (MAX 1 LEVEL INDENT)
+        const branchCards = branchDescendants.map((b) => renderCard(b.entry, true, b.tag));
         const branchGroup = el(
           "div",
           { class: "timeline-branch-group" },
@@ -315,20 +353,20 @@ export const TimelineSidebar = (): HTMLElement => {
   return root;
 };
 
-const openQuickPreview = (entry: TimelineEntry) => {
-  const url = URL.createObjectURL(entry.blob);
+const openFilePreview = (file: File) => {
+  const url = URL.createObjectURL(file);
   const overlay = el("div", { class: "preview-overlay", role: "dialog" }, [
     el("div", { class: "preview-card" }, [
       el("div", { class: "preview-card__head" }, [
-        el("span", { class: "preview-card__name" }, [entry.fileName]),
+        el("span", { class: "preview-card__name" }, [file.name]),
         el("button", { class: "btn btn--sm", type: "button" }, ["Close"])
       ]),
       el("div", { class: "preview-card__body" }, [
-        entry.mime === "application/pdf"
+        file.type === "application/pdf" || /\.pdf$/i.test(file.name)
           ? el("iframe", { class: "preview-frame", src: url })
-          : entry.mime.startsWith("image/")
-            ? el("img", { class: "preview-image", src: url, alt: entry.fileName })
-            : el("p", { class: "muted" }, ["Preview not available."])
+          : file.type.startsWith("image/") || /\.(png|jpe?g)$/i.test(file.name)
+            ? el("img", { class: "preview-image", src: url, alt: file.name })
+            : el("p", { class: "muted" }, ["Preview not available for this file type."])
       ])
     ])
   ]);

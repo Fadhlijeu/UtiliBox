@@ -1089,7 +1089,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   top: 0;
   left: 0;
   bottom: 0;
-  width: 360px;
+  width: 380px;
   z-index: 90;
   display: flex;
   flex-direction: column;
@@ -1100,7 +1100,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 }
 
 .timeline-sidebar--closed {
-  transform: translateX(-360px);
+  transform: translateX(-380px);
 }
 
 .timeline-sidebar--open {
@@ -1110,7 +1110,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 .timeline-sidebar__toggle {
   position: absolute;
   top: 72px;
-  left: 360px;
+  left: 380px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1191,9 +1191,9 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   text-align: center;
 }
 
-/* ── Pipeline Chain Cards (Konsep A) ─────────────── */
+/* ── Vertical Form Timeline Cards ───────────────── */
 
-.pipeline-card {
+.timeline-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -1206,25 +1206,27 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   transition: all var(--duration-fast) var(--ease-standard);
 }
 
-.pipeline-card:hover {
+.timeline-card:hover {
   border-color: var(--color-accent-strong);
   box-shadow: 0 4px 12px oklch(0% 0 0 / 0.08);
   transform: translateY(-1px);
 }
 
-.pipeline-card--branch {
+.timeline-card--branch {
   border-left: 3px solid var(--color-accent-strong);
   background: var(--color-paper-1);
 }
 
-.pipeline-card__head {
+.timeline-card__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
-.pipeline-badge {
+.timeline-badge {
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 10px;
@@ -1232,115 +1234,178 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   letter-spacing: 0.3px;
 }
 
-.pipeline-badge--main {
+.timeline-badge--main {
   background: oklch(50% 0.2 150 / 0.15);
   color: oklch(35% 0.25 150);
 }
 
-.pipeline-badge--branch {
+.timeline-badge--branch {
   background: oklch(60% 0.2 270 / 0.15);
   color: oklch(35% 0.25 270);
 }
 
-.pipeline-card__time {
+.timeline-card__time {
   font-size: 11px;
 }
 
-/* 3-Step Chain Box: Input -> Action -> Output */
-.pipeline-chain {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--color-paper-2);
-  border: 1px solid var(--color-border-subtle);
-}
-
-.pipeline-step {
+/* Sections: Source, Action, Output */
+.timeline-card__section {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+}
+
+.timeline-card__section-head {
+  display: flex;
   align-items: center;
-  text-align: center;
-  flex: 1;
-  min-width: 0;
-  gap: 1px;
-}
-
-.pipeline-step__icon {
-  font-size: 16px;
-  color: var(--color-ink-muted);
-}
-
-.pipeline-step--input .pipeline-step__icon {
-  color: oklch(50% 0.2 220);
-}
-
-.pipeline-step--action .pipeline-step__icon {
-  color: oklch(50% 0.2 40);
-}
-
-.pipeline-step--output .pipeline-step__icon {
-  color: oklch(50% 0.2 150);
-}
-
-.pipeline-step__title {
-  font-size: 9px;
+  gap: 4px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--color-ink-muted);
 }
 
-.pipeline-step__desc {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 76px;
+.timeline-card__section-head .material-symbols-outlined {
+  font-size: 13px;
 }
 
-.pipeline-arrow {
+/* Interactive Source File Pills */
+.timeline-pills-grid {
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.timeline-file-pill {
+  display: inline-flex;
   align-items: center;
-  color: var(--color-ink-muted);
-  opacity: 0.5;
-  font-size: 14px;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 100%;
+  transition: all var(--duration-fast);
+}
+
+.timeline-file-pill:hover {
+  background: var(--color-paper-3);
+  border-color: var(--color-accent-strong);
+  color: var(--color-accent-strong);
+}
+
+.timeline-file-pill__icon {
+  font-size: 13px;
+  color: oklch(50% 0.2 220);
   flex-shrink: 0;
 }
 
+.timeline-file-pill__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+/* Action Badge */
+.timeline-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: oklch(94% 0.03 250);
+  border: 1px solid oklch(88% 0.06 250);
+  color: var(--color-ink);
+  font-size: 11px;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.timeline-action-pill .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--color-accent-strong);
+}
+
+.timeline-action-pill__meta {
+  font-size: 10px;
+  opacity: 0.75;
+  padding-left: 4px;
+  border-left: 1px solid var(--color-border-strong);
+}
+
+/* Output Box */
+.timeline-output-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-sm);
+  background: oklch(96% 0.02 150);
+  border: 1px solid oklch(88% 0.08 150);
+}
+
+.timeline-output-box__icon {
+  font-size: 18px;
+  color: oklch(45% 0.2 150);
+  flex-shrink: 0;
+}
+
+.timeline-output-box__info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.timeline-output-box__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-output-box__size {
+  font-size: 10px;
+}
+
 /* Footer: Restore button + icon actions */
-.pipeline-card__footer {
+.timeline-card__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
 }
 
-.pipeline-btn--restore {
+.timeline-btn--restore {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  padding: 4px 10px;
+  padding: 4px 12px;
 }
 
-.pipeline-card__quick-actions {
+.timeline-card__quick-actions {
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
-.pipeline-card__icon-btn {
+.timeline-card__icon-btn {
   padding: 4px;
   border-radius: var(--radius-sm);
 }
 
-.pipeline-card__icon-btn--delete:hover {
+.timeline-card__icon-btn--delete:hover {
   color: oklch(55% 0.22 25);
   background: oklch(55% 0.22 25 / 0.1);
 }
@@ -1355,8 +1420,8 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 
 .timeline-branch-group {
   position: relative;
-  margin-left: 20px;
-  padding-left: 14px;
+  margin-left: 16px;
+  padding-left: 12px;
   border-left: 2px dashed var(--color-accent-strong);
   display: flex;
   flex-direction: column;
