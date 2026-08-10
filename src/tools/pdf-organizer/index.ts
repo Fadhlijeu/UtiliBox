@@ -214,19 +214,22 @@ const refreshPositions = (grid: HTMLElement): void => {
   });
 };
 
+let activeDragFromIndex = -1;
+
 const bindDnd = (
   cell: HTMLElement,
   grid: HTMLElement,
   state: GridState,
-  onDrop: (to: number) => void
+  onDrop: (from: number, to: number) => void
 ): void => {
   cell.draggable = true;
   cell.addEventListener("dragstart", (e) => {
-    state.from = liveIndex(grid, cell);
+    activeDragFromIndex = liveIndex(grid, cell);
+    state.from = activeDragFromIndex;
     cell.classList.add("page-cell--dragging");
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", "");
+      e.dataTransfer.setData("text/plain", String(activeDragFromIndex));
     }
   });
   cell.addEventListener("dragend", () => {
@@ -236,6 +239,9 @@ const bindDnd = (
       .forEach((c) => c.classList.remove("page-cell--drop"));
     state.from = -1;
     state.suppressUntil = Date.now() + 350;
+    setTimeout(() => {
+      activeDragFromIndex = -1;
+    }, 100);
   });
   cell.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -248,11 +254,17 @@ const bindDnd = (
   cell.addEventListener("drop", (e) => {
     e.preventDefault();
     cell.classList.remove("page-cell--drop");
-    if (state.from < 0) return;
+    let from = activeDragFromIndex >= 0 ? activeDragFromIndex : state.from;
+    if (from < 0 && e.dataTransfer) {
+      const val = e.dataTransfer.getData("text/plain");
+      if (val) from = Number(val);
+    }
     const to = liveIndex(grid, cell);
     state.from = -1;
     state.suppressUntil = Date.now() + 350;
-    onDrop(to);
+    if (from >= 0 && to >= 0 && from !== to) {
+      onDrop(from, to);
+    }
   });
 };
 
@@ -330,10 +342,13 @@ const mergeFeature: Feature = {
       }
     });
 
-    const applyMove = (cell: HTMLElement, to: number) => {
+    const applyMove = (from: number, to: number) => {
+      const kids = Array.from(grid.children);
+      if (from < 0 || to < 0 || from === to || from >= kids.length || to >= kids.length) return;
+      const cell = kids[from] as HTMLElement;
       withScrollPreserved(() => {
-        const from = reorderDom(grid, cell, to);
-        if (from < 0) return;
+        const actualFrom = reorderDom(grid, cell, to);
+        if (actualFrom < 0) return;
         const before = cloneItems();
         const copy = [...items];
         const [moved] = copy.splice(from, 1);
@@ -399,10 +414,11 @@ const mergeFeature: Feature = {
                 : el("span", { class: "page-cell__tag page-cell__tag--img" }, ["IMG"])
             ])
           );
-          bindDnd(cell, grid, state, (to) => applyMove(cell, to));
+          bindDnd(cell, grid, state, (from, to) => applyMove(from, to));
           moveButtons(cell, (delta) => {
-            const to = liveIndex(grid, cell) + delta;
-            applyMove(cell, to);
+            const kids = Array.from(grid.children);
+            const from = kids.indexOf(cell);
+            applyMove(from, from + delta);
           });
           cellByItem.set(item, cell);
         }
@@ -545,21 +561,24 @@ const buildPdfSection = (
     opts.onSelectionChange?.();
   };
 
-  const applyOrderMove = (cell: HTMLElement, to: number) => {
+  const applyOrderMove = (from: number, to: number) => {
+    const kids = Array.from(grid.children);
+    if (from < 0 || to < 0 || from === to || from >= kids.length || to >= kids.length) return;
+    const cell = kids[from] as HTMLElement;
+    const fromPage = pdf.order[from];
     withScrollPreserved(() => {
-      const from = reorderDom(grid, cell, to);
-      if (from < 0) return;
+      const actualFrom = reorderDom(grid, cell, to);
+      if (actualFrom < 0) return;
       const before = [...pdf.order];
       const copy = [...before];
       const [moved] = copy.splice(from, 1);
       copy.splice(to, 0, moved);
       pdf.order = copy;
       const after = [...pdf.order];
-      const movedPage = pdf.order[to] ?? copy[to];
       refreshPositions(grid);
       opts.onOrderChange?.();
       historyBar.pushHistory({
-        label: `Moved page ${movedPage ?? from} to position ${to + 1}`,
+        label: `Moved page ${fromPage} to position ${to + 1}`,
         undo: () => {
           pdf.order = before;
           relayoutFromOrder();
@@ -604,10 +623,11 @@ const buildPdfSection = (
             togglePageSelection(pageNum, e.shiftKey);
           }
         });
-        bindDnd(cell, grid, state, (to) => applyOrderMove(cell, to));
+        bindDnd(cell, grid, state, (from, to) => applyOrderMove(from, to));
         moveButtons(cell, (delta) => {
           const kids = Array.from(grid.children);
-          applyOrderMove(cell, kids.indexOf(cell) + delta);
+          const from = kids.indexOf(cell);
+          applyOrderMove(from, from + delta);
         });
         cellByPage.set(pageNum, cell);
       });

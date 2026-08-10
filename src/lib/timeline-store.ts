@@ -24,6 +24,7 @@ type TimelineListener = (entries: TimelineEntry[]) => void;
 class TimelineStore {
   private entries: TimelineEntry[] = [];
   private listeners: Set<TimelineListener> = new Set();
+  private lastMainId: string | null = null;
 
   public subscribe(listener: TimelineListener): () => void {
     this.listeners.add(listener);
@@ -47,16 +48,25 @@ class TimelineStore {
       .toString()
       .padStart(2, "0")} · ${now.getDate()} ${now.toLocaleString("default", { month: "short" })}`;
 
+    const id = `tl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const lineage = entry.lineage ?? "main";
+    const parentId = lineage === "branch" ? (entry.parentId ?? this.lastMainId) : null;
+
+    if (lineage === "main") {
+      this.lastMainId = id;
+    }
+
     const newEntry: TimelineEntry = {
       ...entry,
-      id: `tl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      id,
+      lineage,
+      parentId,
       timestamp,
       formattedSize: formatBytes(entry.size)
     };
 
-    // Keep top of list most recent, limit to 20 entries
     this.entries.unshift(newEntry);
-    if (this.entries.length > 20) {
+    if (this.entries.length > 30) {
       this.entries.pop();
     }
 
@@ -71,6 +81,7 @@ class TimelineStore {
 
   public clear(): void {
     this.entries = [];
+    this.lastMainId = null;
     this.notify();
   }
 }
