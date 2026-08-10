@@ -4,9 +4,14 @@ import { SAME_TOOL_EVENT, type OutputFile } from "./output-panel";
 import { timelineStore } from "../lib/timeline-store";
 import { toast } from "./toast";
 
-export const createSendToMenu = (file: OutputFile, currentToolId?: string): HTMLElement => {
+export const createSendToMenu = (
+  file: OutputFile,
+  currentToolId?: string,
+  currentFeatureId?: string
+): HTMLElement => {
   const fileObj = new File([file.blob], file.name, { type: file.mime });
-  const targets = handoffTargetsFor(file.mime, currentToolId, "");
+  // Exclude current tool/feature tab to prevent self-handoff loops
+  const targets = handoffTargetsFor(file.mime, currentToolId, currentFeatureId);
 
   if (!targets.length) {
     return el("span", { class: "muted text-xs" }, ["No handoff tools"]);
@@ -17,7 +22,6 @@ export const createSendToMenu = (file: OutputFile, currentToolId?: string): HTML
   for (const t of targets) {
     let g = toolGroups.get(t.toolId);
     if (!g) {
-      // Clean tool name from label (e.g. "Merge & Split → Split" -> "Merge & Split")
       const toolName = t.label.split("→")[0]?.trim() ?? t.toolId;
       g = { toolName, features: [] };
       toolGroups.set(t.toolId, g);
@@ -57,10 +61,16 @@ export const createSendToMenu = (file: OutputFile, currentToolId?: string): HTML
     closeMenu();
     stageHandoff(t.toolId, [fileObj]);
 
-    // Record in global timeline history
+    const sourceLabel = currentToolId ?? "Tool";
+    const targetLabel = t.label.includes("→") ? t.label.split("→")[1]?.trim() ?? t.featureId : t.featureId;
+
+    // Record in global timeline history as branch lineage
     timelineStore.addEntry({
       toolId: t.toolId,
       featureId: t.featureId,
+      sourceLabel,
+      targetLabel,
+      lineage: "branch",
       fileName: file.name,
       blob: file.blob,
       mime: file.mime,
@@ -101,7 +111,6 @@ export const createSendToMenu = (file: OutputFile, currentToolId?: string): HTML
         item.addEventListener("click", () => performHandoff(feat));
         menuItems.push(item);
       } else {
-        // Tool with multiple features -> create parent item with flyout submenu
         const submenuItems = group.features.map((feat) => {
           const featureLabel = feat.label.includes("→")
             ? feat.label.split("→")[1]?.trim() ?? feat.label
@@ -144,9 +153,19 @@ export const createSendToMenu = (file: OutputFile, currentToolId?: string): HTML
 
     const menu = el("div", { class: "sendto-menu" }, menuItems);
     const rect = trigger.getBoundingClientRect();
+    const menuWidth = 220;
+    const margin = 12;
+
+    let top = rect.bottom + 4;
+    if (top + 200 > window.innerHeight - margin) {
+      top = Math.max(margin, rect.top - 200 - 4);
+    }
+
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin));
+
     menu.style.position = "fixed";
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 240))}px`;
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
     menu.style.zIndex = "1000";
 
     document.body.appendChild(menu);

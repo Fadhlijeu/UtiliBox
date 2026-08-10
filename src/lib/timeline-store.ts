@@ -5,6 +5,10 @@ export interface TimelineEntry {
   timestamp: string;
   toolId: string;
   featureId: string;
+  sourceLabel?: string;
+  targetLabel?: string;
+  lineage?: "main" | "branch";
+  parentId?: string | null;
   fileName: string;
   blob: Blob;
   mime: string;

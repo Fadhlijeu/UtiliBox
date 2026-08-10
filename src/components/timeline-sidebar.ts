@@ -100,10 +100,22 @@ export const TimelineSidebar = (): HTMLElement => {
           openQuickPreview(entry);
         });
 
-        const card = el("div", { class: "timeline-item", tabindex: "0", role: "button" }, [
+        const routeLabel = entry.sourceLabel
+          ? entry.targetLabel
+            ? `${entry.sourceLabel} ➔ ${entry.targetLabel}`
+            : entry.sourceLabel
+          : entry.featureId;
+
+        const lineageTag = entry.lineage === "branch" ? "Branch" : "Main";
+
+        const card = el("div", { class: `timeline-item timeline-item--${entry.lineage ?? "main"}`, tabindex: "0", role: "button" }, [
           thumbSlot,
           el("div", { class: "timeline-item__content" }, [
-            el("span", { class: "timeline-item__name", title: entry.fileName }, [entry.fileName]),
+            el("div", { class: "timeline-item__head-line" }, [
+              el("span", { class: "timeline-item__name", title: entry.fileName }, [entry.fileName]),
+              el("span", { class: `timeline-item__badge timeline-item__badge--${entry.lineage ?? "main"}` }, [lineageTag])
+            ]),
+            el("span", { class: "timeline-item__route muted" }, [routeLabel]),
             el("div", { class: "timeline-item__meta" }, [
               el("span", { class: "muted" }, [entry.timestamp]),
               entry.pages ? el("span", { class: "muted" }, [`${entry.pages} pg`]) : null,
@@ -115,7 +127,7 @@ export const TimelineSidebar = (): HTMLElement => {
 
         const restoreState = () => {
           stageHandoff(entry.toolId, [file]);
-          toast(`Restored to ${entry.toolId} (${entry.featureId})`, "info");
+          toast(`Restored: ${entry.fileName} (${routeLabel})`, "info");
           const curTool = location.hash.match(/^#\/tool\/([a-z0-9-]+)/)?.[1];
           if (curTool === entry.toolId) {
             window.dispatchEvent(

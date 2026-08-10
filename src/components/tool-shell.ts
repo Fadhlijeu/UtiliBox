@@ -56,9 +56,13 @@ export const ToolShell = (
     result.node
   ]);
 
-  resultWrap.querySelector<HTMLButtonElement>("[data-back]")?.addEventListener("click", () => {
+  const closeResult = () => {
     resultWrap.hidden = true;
     workspace.classList.remove("hidden");
+  };
+
+  resultWrap.querySelector<HTMLButtonElement>("[data-back]")?.addEventListener("click", () => {
+    closeResult();
     window.scrollTo(0, 0);
   });
 
@@ -66,8 +70,7 @@ export const ToolShell = (
     history.length = 0;
     redoStack.length = 0;
     result.clear();
-    resultWrap.hidden = true;
-    workspace.classList.remove("hidden");
+    closeResult();
     opts.onReset?.();
     mountFeature(current);
   };
@@ -106,6 +109,7 @@ export const ToolShell = (
         "data-feature": f.id
       }, [f.label]);
       tab.addEventListener("click", () => {
+        closeResult();
         if (f.id === current) return;
         current = f.id;
         tabs.querySelectorAll(".feature-tab").forEach((t) => {
@@ -136,9 +140,12 @@ export const ToolShell = (
     activity: () => void 0,
     /** switch to a feature (used by handoff of same-tool) */
     activate: (id: string) => {
+      closeResult();
       const tab = tabs.querySelector<HTMLButtonElement>(`[data-feature="${id}"]`);
       tab?.click();
     },
+    /** close result view and show workspace */
+    closeResult,
     /** open the result view with files */
     showResult: ctx.showResult,
     reset: clearAll
