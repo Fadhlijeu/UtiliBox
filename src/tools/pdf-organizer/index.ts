@@ -1056,21 +1056,22 @@ export const mount = (root: HTMLElement): void => {
   notifyActivity = shell.activity;
   root.append(shell.node);
 
+  const consumeHandoff = async () => {
+    const incoming = takeHandoff("pdf-organizer");
+    if (incoming.length) {
+      entries.length = 0; // Clear previous state to prevent duplicating input files
+      await addFiles(incoming, { busy: noopBusy() });
+      toast(`${incoming.length} file(s) loaded`, "success");
+    }
+  };
+
   window.addEventListener(SAME_TOOL_EVENT, (e) => {
     const featureId = (e as CustomEvent<{ featureId?: string }>).detail?.featureId;
     if (featureId) {
       shell.activate(featureId);
-      const incoming = takeHandoff("pdf-organizer");
-      if (incoming.length) {
-        void addFiles(incoming, { busy: noopBusy() });
-        toast(`${incoming.length} file(s) handed off — switch to a feature to use them`, "success");
-      }
+      void consumeHandoff();
     }
   });
 
-  const incoming = takeHandoff("pdf-organizer");
-  if (incoming.length) {
-    void addFiles(incoming, { busy: noopBusy() });
-    toast(`${incoming.length} file(s) handed off — switch to a feature to use them`, "success");
-  }
+  void consumeHandoff();
 };

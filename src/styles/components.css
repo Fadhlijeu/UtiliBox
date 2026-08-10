@@ -1007,14 +1007,13 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   flex-direction: column;
   gap: 2px;
   min-width: 200px;
-  max-height: 320px;
-  overflow-y: auto;
   padding: var(--space-1);
   background: var(--color-paper-1);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
   animation: toast-in 150ms ease-out;
+  overflow: visible;
 }
 
 .sendto-menu__item {
@@ -1060,16 +1059,20 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 .sendto-submenu {
   display: none;
   position: absolute;
-  top: 100%;
-  left: 0;
+  top: -4px;
+  left: 100%;
   min-width: 180px;
-  max-height: 240px;
-  overflow-y: auto;
   padding: var(--space-1);
-  background: var(--color-paper-1);
+  background: #ffffff;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 1050;
+}
+
+.sendto-submenu--left {
+  left: auto !important;
+  right: 100% !important;
 }
 
 .sendto-menu__item--has-sub:hover .sendto-submenu,

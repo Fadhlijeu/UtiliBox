@@ -171,7 +171,17 @@ export const createSendToMenu = (
           ]
         );
 
-        parentItem.addEventListener("mouseenter", () => parentItem.classList.add("sendto-menu__item--active"));
+        parentItem.addEventListener("mouseenter", () => {
+          parentItem.classList.add("sendto-menu__item--active");
+          const pRect = parentItem.getBoundingClientRect();
+          const subWidth = 190;
+          const margin = 16;
+          if (pRect.right + subWidth + margin > window.innerWidth) {
+            submenu.classList.add("sendto-submenu--left");
+          } else {
+            submenu.classList.remove("sendto-submenu--left");
+          }
+        });
         parentItem.addEventListener("mouseleave", () => parentItem.classList.remove("sendto-menu__item--active"));
         menuItems.push(parentItem);
       }
