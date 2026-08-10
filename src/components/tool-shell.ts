@@ -1,6 +1,8 @@
 import { el, clear } from "../lib/dom";
 import { busy, type Busy } from "./busy";
 import { OutputPanel, type OutputFile, CLOSE_RESULT_EVENT } from "./output-panel";
+import { timelineStore } from "../lib/timeline-store";
+import { toast } from "./toast";
 
 export interface Feature {
   id: string;
@@ -133,6 +135,46 @@ export const ToolShell = (
       el("span", { class: "tool-head__sub muted" }, ["preview first, then download — 100% local"])
     ])
   ]));
+
+  const envBanner = el("div", { class: "env-banner" });
+
+  const renderEnvBanner = () => {
+    const parent = timelineStore.getActiveParentInfo();
+    if (!parent.id) {
+      envBanner.replaceChildren(
+        el("div", { class: "env-banner__pill env-banner__pill--main" }, [
+          el("span", { class: "material-symbols-outlined" }, ["add_circle"]),
+          el("span", {}, ["Session Mode: New Workspace Session (Will create 🟢 MAIN)"])
+        ])
+      );
+    } else {
+      const exitBtn = el(
+        "button",
+        { class: "btn btn--xs btn--ghost env-banner__exit-btn", type: "button" },
+        [
+          el("span", { class: "material-symbols-outlined" }, ["close"]),
+          "Exit to New Main"
+        ]
+      );
+      exitBtn.addEventListener("click", () => {
+        timelineStore.clearActiveParent();
+        toast("Exited snapshot environment. Ready for New Main.", "info");
+      });
+
+      const icon = parent.branchType === "action" ? "rocket_launch" : "edit";
+      envBanner.replaceChildren(
+        el("div", { class: "env-banner__pill env-banner__pill--branch" }, [
+          el("span", { class: "material-symbols-outlined" }, [icon]),
+          el("span", {}, [`Linked to: ${parent.name ?? "Snapshot"} (Will create ↳ Branch)`]),
+          exitBtn
+        ])
+      );
+    }
+  };
+
+  timelineStore.subscribe(renderEnvBanner);
+
+  root.appendChild(envBanner);
   root.appendChild(tabs);
   root.appendChild(workspace);
   root.appendChild(progress.node);

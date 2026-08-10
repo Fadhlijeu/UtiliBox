@@ -1,6 +1,7 @@
 import { clear, el, readFileAsArrayBuffer } from "../../lib/dom";
 import { dropzone } from "../../components/dropzone";
 import { toast } from "../../components/toast";
+import { timelineStore } from "../../lib/timeline-store";
 import { ToolShell, type Feature, type FeatureCtx } from "../../components/tool-shell";
 import { createHistoryBar, type HistoryBarApi } from "../../components/history-bar";
 import { fileThumb, pdfPageThumbs } from "../../lib/thumb";
@@ -109,6 +110,9 @@ const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<n
 
 const removeEntry = (i: number): void => {
   entries.splice(i, 1);
+  if (entries.length === 0) {
+    timelineStore.clearActiveParent();
+  }
   emitChange();
 };
 
@@ -137,8 +141,9 @@ const fileListEl = (): HTMLElement => {
     );
     deleteAllBtn.addEventListener("click", () => {
       entries.length = 0;
+      timelineStore.clearActiveParent();
       emitChange();
-      toast("All files deleted", "info");
+      toast("Workspace cleared — Ready for New Main", "info");
     });
 
     header.replaceChildren(

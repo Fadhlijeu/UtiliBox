@@ -31,6 +31,7 @@ class TimelineStore {
   private listeners: Set<TimelineListener> = new Set();
   private lastMainId: string | null = null;
   private activeParentId: string | null = null;
+  private activeParentName: string | null = null;
   private activeBranchType: "edit" | "action" = "edit";
 
   public subscribe(listener: TimelineListener): () => void {
@@ -48,13 +49,34 @@ class TimelineStore {
     return [...this.entries];
   }
 
-  public setActiveParent(parentId: string | null, branchType: "edit" | "action" = "edit"): void {
+  public setActiveParent(
+    parentId: string | null,
+    parentName?: string,
+    branchType: "edit" | "action" = "edit"
+  ): void {
     this.activeParentId = parentId;
+    this.activeParentName = parentName ?? (parentId ? "Snapshot" : null);
     this.activeBranchType = branchType;
+    this.notify();
+  }
+
+  public clearActiveParent(): void {
+    this.activeParentId = null;
+    this.activeParentName = null;
+    this.activeBranchType = "edit";
+    this.notify();
   }
 
   public getActiveParentId(): string | null {
     return this.activeParentId;
+  }
+
+  public getActiveParentInfo(): { id: string | null; name: string | null; branchType: "edit" | "action" } {
+    return {
+      id: this.activeParentId,
+      name: this.activeParentName,
+      branchType: this.activeBranchType
+    };
   }
 
   public addEntry(entry: Omit<TimelineEntry, "id" | "timestamp" | "formattedSize">): TimelineEntry {
@@ -95,6 +117,7 @@ class TimelineStore {
 
     // Advance active parent to the newly created entry
     this.activeParentId = id;
+    this.activeParentName = entry.fileName;
     this.activeBranchType = "edit";
 
     this.notify();
@@ -104,17 +127,16 @@ class TimelineStore {
   public removeEntry(id: string): void {
     this.entries = this.entries.filter((e) => e.id !== id);
     if (this.activeParentId === id) {
-      this.activeParentId = null;
+      this.clearActiveParent();
+    } else {
+      this.notify();
     }
-    this.notify();
   }
 
   public clear(): void {
     this.entries = [];
     this.lastMainId = null;
-    this.activeParentId = null;
-    this.activeBranchType = "edit";
-    this.notify();
+    this.clearActiveParent();
   }
 }
 

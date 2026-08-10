@@ -113,22 +113,6 @@ export const OutputPanel = () => {
             thumbSlot.replaceChildren(genericThumb("description").node);
           });
 
-        if (!skipTimelineLog) {
-          // Record output file into timeline store with input and output files
-          timelineStore.addEntry({
-            toolId: cur ?? "output",
-            featureId: sourceFeatureId ?? f.sourceFeatureId ?? "output",
-            sourceLabel: sourceLabel ?? f.sourceLabel,
-            actionLabel,
-            fileName: f.name,
-            blob: f.blob,
-            mime: f.mime,
-            size: f.blob.size,
-            inputFiles,
-            outputFiles: files
-          });
-        }
-
         // per-page preview strip for PDF outputs (verify before download)
         if (f.mime === "application/pdf") {
           const pagesBtn = el("button", { class: "btn btn--sm btn--ghost output-pages-toggle", type: "button" }, [
@@ -165,6 +149,25 @@ export const OutputPanel = () => {
         return row;
       })
     );
+
+    if (!skipTimelineLog && files.length > 0) {
+      const primary = files[0];
+      const totalSize = files.reduce((acc, f) => acc + f.blob.size, 0);
+      const batchName = files.length > 1 ? `${primary.name} (+${files.length - 1} files)` : primary.name;
+      timelineStore.addEntry({
+        toolId: cur ?? "output",
+        featureId: sourceFeatureId ?? primary.sourceFeatureId ?? "output",
+        sourceLabel: sourceLabel ?? primary.sourceLabel,
+        actionLabel,
+        fileName: batchName,
+        blob: primary.blob,
+        mime: primary.mime,
+        size: totalSize,
+        inputFiles,
+        outputFiles: files
+      });
+    }
+
     panel.hidden = false;
   };
 

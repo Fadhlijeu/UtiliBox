@@ -247,7 +247,7 @@ export const TimelineSidebar = (): HTMLElement => {
     );
 
     const restoreState = () => {
-      timelineStore.setActiveParent(entry.id, "edit");
+      timelineStore.setActiveParent(entry.id, entry.fileName, "edit");
       stageHandoff(entry.toolId, inputs);
       toast(`Restored history: ${entry.fileName}`, "info");
 
@@ -314,7 +314,7 @@ export const TimelineSidebar = (): HTMLElement => {
       return;
     }
 
-    // Separate main entries and child branch entries by parentId
+    // Map children by parentId
     const childrenMap = new Map<string, TimelineEntry[]>();
     const mainEntries: TimelineEntry[] = [];
 
@@ -328,45 +328,39 @@ export const TimelineSidebar = (): HTMLElement => {
       }
     });
 
-    // Helper to recursively collect all branch descendants of a parent node
-    const getBranchDescendants = (parentId: string, depth = 1): Array<{ entry: TimelineEntry; tag: string }> => {
-      const result: Array<{ entry: TimelineEntry; tag: string }> = [];
-      const children = childrenMap.get(parentId) ?? [];
-      children.forEach((child, idx) => {
-        const tag = `↳ Branch #${depth}.${idx + 1}`;
-        result.push({ entry: child, tag });
-        result.push(...getBranchDescendants(child.id, depth + 1));
+    // Render tree recursively with nested margin-left depth indentation
+    const renderTreeNode = (entry: TimelineEntry, depth = 0, treeTag?: string): HTMLElement => {
+      const isBranch = entry.lineage === "branch" || depth > 0;
+      const cardNode = renderCard(entry, isBranch, treeTag);
+      const children = childrenMap.get(entry.id) ?? [];
+
+      if (!children.length) {
+        return cardNode;
+      }
+
+      const childNodes = children.map((child, idx) => {
+        const tag = `↳ Branch #${depth + 1}.${idx + 1}`;
+        return renderTreeNode(child, depth + 1, tag);
       });
-      return result;
+
+      const branchGroup = el(
+        "div",
+        {
+          class: "timeline-branch-group",
+          style: `margin-left: ${Math.min(depth + 1, 3) * 16}px;`
+        },
+        [
+          el("div", { class: "timeline-branch-connector" }),
+          el("div", { class: "timeline-branch-list" }, childNodes)
+        ]
+      );
+
+      return el("div", { class: "timeline-node-container" }, [cardNode, branchGroup]);
     };
 
-    const renderedNodes: HTMLElement[] = [];
-
-    mainEntries.forEach((mainItem, mIdx) => {
-      const mainCard = renderCard(mainItem, false, `🟢 Main #${mIdx + 1}`);
-      const branchDescendants = getBranchDescendants(mainItem.id);
-
-      if (!branchDescendants.length) {
-        renderedNodes.push(mainCard);
-      } else {
-        // Render all branch descendants inside a single indented container (MAX 1 LEVEL INDENT)
-        const branchCards = branchDescendants.map((b) => renderCard(b.entry, true, b.tag));
-        const branchGroup = el(
-          "div",
-          { class: "timeline-branch-group" },
-          [
-            el("div", { class: "timeline-branch-connector" }),
-            el("div", { class: "timeline-branch-list" }, branchCards)
-          ]
-        );
-
-        const nodeContainer = el("div", { class: "timeline-node-container" }, [
-          mainCard,
-          branchGroup
-        ]);
-        renderedNodes.push(nodeContainer);
-      }
-    });
+    const renderedNodes = mainEntries.map((mainItem, mIdx) =>
+      renderTreeNode(mainItem, 0, `🟢 Main #${mIdx + 1}`)
+    );
 
     listContainer.replaceChildren(...renderedNodes);
   };

@@ -60,6 +60,56 @@
   cursor: not-allowed;
 }
 
+/* ── Active Session Environment Banner Bar ─────────── */
+
+.env-banner {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.env-banner__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all var(--duration-fast);
+}
+
+.env-banner__pill .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.env-banner__pill--main {
+  background: oklch(50% 0.2 150 / 0.12);
+  color: var(--color-success, oklch(75% 0.2 150));
+  border: 1px solid oklch(50% 0.2 150 / 0.3);
+}
+
+.env-banner__pill--branch {
+  background: oklch(65% 0.18 75 / 0.15);
+  color: oklch(82% 0.18 75);
+  border: 1px solid oklch(65% 0.18 75 / 0.4);
+}
+
+.env-banner__exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.env-banner__exit-btn:hover {
+  background: oklch(55% 0.22 25 / 0.2);
+  color: oklch(75% 0.22 25);
+}
+
 /* ── textarea / code areas ─────────── */
 
 .field-label {

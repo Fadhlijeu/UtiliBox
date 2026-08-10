@@ -88,21 +88,9 @@ export const createSendToMenu = (
     closeMenu();
     stageHandoff(t.toolId, [fileObj]);
 
-    const sourceLabel = currentToolId ?? "Tool";
-    const targetLabel = t.label.includes("→") ? t.label.split("→")[1]?.trim() ?? t.featureId : t.featureId;
-
-    timelineStore.addEntry({
-      toolId: t.toolId,
-      featureId: t.featureId,
-      sourceLabel,
-      targetLabel,
-      lineage: "branch",
-      branchType: "action",
-      fileName: file.name,
-      blob: file.blob,
-      mime: file.mime,
-      size: file.blob.size
-    });
+    // Set active parent context so target feature logs a single clean branch entry under parent!
+    const parentId = (file as any).id ?? timelineStore.getActiveParentId();
+    timelineStore.setActiveParent(parentId, file.name, "action");
 
     toast(`Handed off to ${t.label}`, "success");
 
