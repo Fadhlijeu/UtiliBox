@@ -80,6 +80,16 @@ export const TimelineSidebar = (): HTMLElement => {
     return "build";
   };
 
+  const getActionName = (featureId: string, sourceLabel?: string): string => {
+    if (sourceLabel && sourceLabel !== "output" && sourceLabel !== "pdf-organizer") return sourceLabel;
+    if (featureId.includes("merge")) return "Merge";
+    if (featureId.includes("split")) return "Split";
+    if (featureId.includes("organize")) return "Organize";
+    if (featureId.includes("compress")) return "Compress";
+    if (featureId.includes("convert")) return "Convert Document";
+    return "Merge & Split";
+  };
+
   const renderCard = (
     entry: TimelineEntry,
     isBranch: boolean,
@@ -145,7 +155,7 @@ export const TimelineSidebar = (): HTMLElement => {
       return pill;
     });
 
-    const actionName = entry.sourceLabel ?? entry.featureId ?? "Process";
+    const actionName = getActionName(entry.featureId, entry.sourceLabel);
     const actionIcon = getActionIcon(entry.featureId);
 
     const restoreBtn = el(
@@ -208,7 +218,7 @@ export const TimelineSidebar = (): HTMLElement => {
             el("span", { class: "timeline-card__section-label" }, ["OUTPUT"])
           ]),
           el("div", { class: "timeline-output-box" }, [
-            el("span", { class: "material-symbols-outlined timeline-output-box__icon" }, ["task_complete"]),
+            el("span", { class: "material-symbols-outlined timeline-output-box__icon" }, ["task_alt"]),
             el("div", { class: "timeline-output-box__info" }, [
               el("span", { class: "timeline-output-box__name", title: entry.fileName }, [entry.fileName]),
               el("span", { class: "timeline-output-box__size muted" }, [entry.formattedSize])

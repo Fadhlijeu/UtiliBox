@@ -1063,10 +1063,11 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   left: 100%;
   min-width: 180px;
   padding: var(--space-1);
-  background: #ffffff;
+  background: var(--color-paper-1);
+  color: var(--color-ink);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-lg);
   z-index: 1050;
 }
 
@@ -1235,13 +1236,15 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 }
 
 .timeline-badge--main {
-  background: oklch(50% 0.2 150 / 0.15);
-  color: oklch(35% 0.25 150);
+  background: oklch(50% 0.2 150 / 0.25);
+  color: var(--color-success, oklch(75% 0.2 150));
+  border: 1px solid oklch(50% 0.2 150 / 0.4);
 }
 
 .timeline-badge--branch {
-  background: oklch(60% 0.2 270 / 0.15);
-  color: oklch(35% 0.25 270);
+  background: oklch(60% 0.2 270 / 0.25);
+  color: oklch(75% 0.2 270);
+  border: 1px solid oklch(60% 0.2 270 / 0.4);
 }
 
 .timeline-card__time {
@@ -1301,7 +1304,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 
 .timeline-file-pill__icon {
   font-size: 13px;
-  color: oklch(50% 0.2 220);
+  color: var(--color-accent-strong);
   flex-shrink: 0;
 }
 
@@ -1319,8 +1322,8 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   gap: 6px;
   padding: 4px 10px;
   border-radius: var(--radius-sm);
-  background: oklch(94% 0.03 250);
-  border: 1px solid oklch(88% 0.06 250);
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-border);
   color: var(--color-ink);
   font-size: 11px;
   font-weight: 600;
@@ -1334,7 +1337,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 
 .timeline-action-pill__meta {
   font-size: 10px;
-  opacity: 0.75;
+  color: var(--color-ink-muted);
   padding-left: 4px;
   border-left: 1px solid var(--color-border-strong);
 }
@@ -1346,13 +1349,13 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   gap: var(--space-2);
   padding: 6px var(--space-3);
   border-radius: var(--radius-sm);
-  background: oklch(96% 0.02 150);
-  border: 1px solid oklch(88% 0.08 150);
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-border);
 }
 
 .timeline-output-box__icon {
   font-size: 18px;
-  color: oklch(45% 0.2 150);
+  color: var(--color-success, oklch(62% 0.14 152));
   flex-shrink: 0;
 }
 
@@ -1374,6 +1377,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 
 .timeline-output-box__size {
   font-size: 10px;
+  color: var(--color-ink-muted);
 }
 
 /* Footer: Restore button + icon actions */
