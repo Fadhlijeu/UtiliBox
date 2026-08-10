@@ -10,6 +10,7 @@ export interface TimelineEntry {
   targetLabel?: string;
   lineage?: "main" | "branch";
   branchType?: "edit" | "action";
+  actionLabel?: string;
   parentId?: string | null;
   fileName: string;
   blob: Blob;

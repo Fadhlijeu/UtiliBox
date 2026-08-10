@@ -21,7 +21,8 @@ export interface FeatureCtx {
     files: OutputFile[],
     sourceFeatureId?: string,
     sourceLabel?: string,
-    inputFiles?: File[]
+    inputFiles?: File[],
+    actionLabel?: string
   ) => void;
   /** push a reversible step; undo/redo buttons appear in the top bar */
   pushHistory: (cmd: HistoryCmd) => void;
@@ -82,8 +83,8 @@ export const ToolShell = (
 
   const ctx: FeatureCtx = {
     busy: progress,
-    showResult(files, sourceFeatureId?, sourceLabel?, inputFiles?) {
-      result.show(files, sourceFeatureId, sourceLabel, inputFiles);
+    showResult(files, sourceFeatureId?, sourceLabel?, inputFiles?, actionLabel?) {
+      result.show(files, sourceFeatureId, sourceLabel, inputFiles, false, actionLabel);
       workspace.classList.add("hidden");
       resultWrap.hidden = false;
       window.scrollTo(0, 0);

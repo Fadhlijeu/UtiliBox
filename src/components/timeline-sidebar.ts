@@ -168,8 +168,13 @@ export const TimelineSidebar = (): HTMLElement => {
     );
 
     const isEditBranch = entry.branchType === "edit";
-    const defaultBranchTag = isEditBranch ? "↳ ✏️ Edit" : "↳ 🚀 Handoff";
-    const badgeText = isBranch ? (branchLabel ? `${branchLabel} (${isEditBranch ? "Edit" : "Handoff"})` : defaultBranchTag) : "🟢 Main";
+    const labelText = entry.actionLabel ?? actionName;
+    const branchPrefix = isEditBranch ? "↳ ✏️" : "↳ 🚀";
+    const badgeText = isBranch
+      ? branchLabel
+        ? `${branchLabel}: ${labelText}`
+        : `${branchPrefix} ${labelText}`
+      : "🟢 Main";
     const badgeClass = isBranch
       ? isEditBranch
         ? "timeline-badge--branch-edit"

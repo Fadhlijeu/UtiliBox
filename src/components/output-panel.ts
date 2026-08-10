@@ -45,7 +45,8 @@ export const OutputPanel = () => {
     sourceFeatureId?: string,
     sourceLabel?: string,
     inputFiles?: File[],
-    skipTimelineLog?: boolean
+    skipTimelineLog?: boolean,
+    actionLabel?: string
   ) => {
     clearOld();
     const cur = currentToolId();
@@ -118,11 +119,11 @@ export const OutputPanel = () => {
             toolId: cur ?? "output",
             featureId: sourceFeatureId ?? f.sourceFeatureId ?? "output",
             sourceLabel: sourceLabel ?? f.sourceLabel,
+            actionLabel,
             fileName: f.name,
             blob: f.blob,
             mime: f.mime,
             size: f.blob.size,
-            lineage: "main",
             inputFiles,
             outputFiles: files
           });
