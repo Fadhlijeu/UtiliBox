@@ -2,7 +2,7 @@ import { el } from "../lib/dom";
 import { downloadBlob } from "../lib/files";
 import { fileThumb } from "../lib/thumb";
 import { stageHandoff } from "../lib/handoff";
-import { SAME_TOOL_EVENT, CLOSE_RESULT_EVENT } from "./output-panel";
+import { SAME_TOOL_EVENT } from "./output-panel";
 import { timelineStore, type TimelineEntry } from "../lib/timeline-store";
 import { toast } from "./toast";
 
@@ -145,9 +145,22 @@ export const TimelineSidebar = (): HTMLElement => {
     );
 
     const restoreState = () => {
-      stageHandoff(entry.toolId, [file]);
-      window.dispatchEvent(new CustomEvent(CLOSE_RESULT_EVENT));
-      toast(`Restored: ${entry.fileName} (${routeLabel})`, "info");
+      const activeInputFiles =
+        entry.inputFiles && entry.inputFiles.length > 0 ? entry.inputFiles : [file];
+
+      stageHandoff(entry.toolId, activeInputFiles);
+      toast(`Restored history: ${entry.fileName} (${routeLabel})`, "info");
+
+      const outputFiles = entry.outputFiles ?? [
+        {
+          name: entry.fileName,
+          blob: entry.blob,
+          mime: entry.mime,
+          sourceFeatureId: entry.featureId,
+          sourceLabel: entry.sourceLabel
+        }
+      ];
+
       const curTool = location.hash.match(/^#\/tool\/([a-z0-9-]+)/)?.[1];
       if (curTool === entry.toolId) {
         window.dispatchEvent(
@@ -156,6 +169,19 @@ export const TimelineSidebar = (): HTMLElement => {
       } else {
         location.hash = `#/tool/${entry.toolId}`;
       }
+
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("utilibox:restore-snapshot", {
+            detail: {
+              toolId: entry.toolId,
+              featureId: entry.featureId,
+              inputFiles: activeInputFiles,
+              outputFiles
+            }
+          })
+        );
+      }, 50);
     };
 
     card.addEventListener("click", restoreState);

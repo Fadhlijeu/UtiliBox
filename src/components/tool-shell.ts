@@ -17,7 +17,12 @@ export interface HistoryCmd {
 
 export interface FeatureCtx {
   busy: Busy;
-  showResult: (files: OutputFile[], sourceFeatureId?: string, sourceLabel?: string) => void;
+  showResult: (
+    files: OutputFile[],
+    sourceFeatureId?: string,
+    sourceLabel?: string,
+    inputFiles?: File[]
+  ) => void;
   /** push a reversible step; undo/redo buttons appear in the top bar */
   pushHistory: (cmd: HistoryCmd) => void;
   /** wipe history + result view (fresh start) */
@@ -77,8 +82,8 @@ export const ToolShell = (
 
   const ctx: FeatureCtx = {
     busy: progress,
-    showResult(files, sourceFeatureId?, sourceLabel?) {
-      result.show(files, sourceFeatureId, sourceLabel);
+    showResult(files, sourceFeatureId?, sourceLabel?, inputFiles?) {
+      result.show(files, sourceFeatureId, sourceLabel, inputFiles);
       workspace.classList.add("hidden");
       resultWrap.hidden = false;
       window.scrollTo(0, 0);
@@ -138,6 +143,16 @@ export const ToolShell = (
     closeResult();
     window.scrollTo(0, 0);
   });
+
+  window.addEventListener("utilibox:restore-snapshot", ((e: CustomEvent) => {
+    const detail = e.detail;
+    if (detail?.outputFiles) {
+      result.show(detail.outputFiles);
+      workspace.classList.remove("hidden");
+      resultWrap.hidden = false;
+      window.scrollTo(0, 0);
+    }
+  }) as EventListener);
 
   return {
     node: root,

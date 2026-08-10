@@ -1,4 +1,5 @@
 import { formatBytes } from "./files";
+import type { OutputFile } from "../components/output-panel";
 
 export interface TimelineEntry {
   id: string;
@@ -17,6 +18,8 @@ export interface TimelineEntry {
   formattedSize: string;
   coverCanvas?: HTMLCanvasElement;
   coverUrl?: string;
+  inputFiles?: File[];
+  outputFiles?: OutputFile[];
 }
 
 type TimelineListener = (entries: TimelineEntry[]) => void;

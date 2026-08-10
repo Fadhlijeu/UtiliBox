@@ -20,6 +20,7 @@ const currentToolId = (): string | undefined =>
 /** Handoff to a feature of the same tool → notify shell via custom event. */
 const SAME_TOOL_EVENT = "utilibox:feature-handoff";
 const CLOSE_RESULT_EVENT = "utilibox:close-result";
+const RESTORE_SNAPSHOT_EVENT = "utilibox:restore-snapshot";
 
 /**
  * Output panel — appears only when there IS output (never idle chrome).
@@ -39,7 +40,12 @@ export const OutputPanel = () => {
     urls = [];
   };
 
-  const show = (files: OutputFile[], sourceFeatureId?: string, sourceLabel?: string) => {
+  const show = (
+    files: OutputFile[],
+    sourceFeatureId?: string,
+    sourceLabel?: string,
+    inputFiles?: File[]
+  ) => {
     clearOld();
     const cur = currentToolId();
     const headNodes: Node[] = [
@@ -105,7 +111,7 @@ export const OutputPanel = () => {
             thumbSlot.replaceChildren(genericThumb("description").node);
           });
 
-        // Record output file into timeline store
+        // Record output file into timeline store with input and output files
         timelineStore.addEntry({
           toolId: cur ?? "output",
           featureId: sourceFeatureId ?? f.sourceFeatureId ?? "output",
@@ -114,7 +120,9 @@ export const OutputPanel = () => {
           blob: f.blob,
           mime: f.mime,
           size: f.blob.size,
-          lineage: "main"
+          lineage: "main",
+          inputFiles,
+          outputFiles: files
         });
 
         // per-page preview strip for PDF outputs (verify before download)
@@ -244,4 +252,4 @@ const openPreview = (f: OutputFile, url: string) => {
 };
 
 // shared event name export for tools
-export { SAME_TOOL_EVENT, CLOSE_RESULT_EVENT };
+export { SAME_TOOL_EVENT, CLOSE_RESULT_EVENT, RESTORE_SNAPSHOT_EVENT };

@@ -457,7 +457,8 @@ const mergeFeature: Feature = {
             }
           ],
           "merge",
-          "Merge"
+          "Merge",
+          entries.map((e) => e.file)
         );
         toast(`Merge ready — ${items.length} page(s)`, "success");
       } catch (e) {
@@ -759,7 +760,8 @@ const splitFeature: Feature = {
           sourceLabel: "Split"
         })),
         "split",
-        "Split"
+        "Split",
+        [pdf.file]
       );
       toast(`File ${fileIdx + 1} — ${parts.length} part(s) ready`, "success");
     };
@@ -967,7 +969,8 @@ const organizeFeature: Feature = {
               }
             ],
             "organize",
-            "Organize"
+            "Organize",
+            [pdf.file]
           );
           toast("Organized PDF ready", "success");
         } catch (e) {
@@ -1017,7 +1020,7 @@ const organizeFeature: Feature = {
             sourceLabel: "Organize"
           });
         }
-        ctx.showResult(out, "organize", "Organize");
+        ctx.showResult(out, "organize", "Organize", pdfs().map((p) => p.file));
         toast(`Organized ${out.length} file(s)`, "success");
       } catch (e) {
         toast(`Failed: ${e instanceof Error ? e.message : e}`, "error");
