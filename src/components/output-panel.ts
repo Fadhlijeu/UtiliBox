@@ -44,7 +44,8 @@ export const OutputPanel = () => {
     files: OutputFile[],
     sourceFeatureId?: string,
     sourceLabel?: string,
-    inputFiles?: File[]
+    inputFiles?: File[],
+    skipTimelineLog?: boolean
   ) => {
     clearOld();
     const cur = currentToolId();
@@ -111,19 +112,21 @@ export const OutputPanel = () => {
             thumbSlot.replaceChildren(genericThumb("description").node);
           });
 
-        // Record output file into timeline store with input and output files
-        timelineStore.addEntry({
-          toolId: cur ?? "output",
-          featureId: sourceFeatureId ?? f.sourceFeatureId ?? "output",
-          sourceLabel: sourceLabel ?? f.sourceLabel,
-          fileName: f.name,
-          blob: f.blob,
-          mime: f.mime,
-          size: f.blob.size,
-          lineage: "main",
-          inputFiles,
-          outputFiles: files
-        });
+        if (!skipTimelineLog) {
+          // Record output file into timeline store with input and output files
+          timelineStore.addEntry({
+            toolId: cur ?? "output",
+            featureId: sourceFeatureId ?? f.sourceFeatureId ?? "output",
+            sourceLabel: sourceLabel ?? f.sourceLabel,
+            fileName: f.name,
+            blob: f.blob,
+            mime: f.mime,
+            size: f.blob.size,
+            lineage: "main",
+            inputFiles,
+            outputFiles: files
+          });
+        }
 
         // per-page preview strip for PDF outputs (verify before download)
         if (f.mime === "application/pdf") {

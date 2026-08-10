@@ -147,7 +147,7 @@ export const ToolShell = (
   window.addEventListener("utilibox:restore-snapshot", ((e: CustomEvent) => {
     const detail = e.detail;
     if (detail?.outputFiles) {
-      result.show(detail.outputFiles);
+      result.show(detail.outputFiles, detail.featureId, detail.sourceLabel, detail.inputFiles, true);
       workspace.classList.remove("hidden");
       resultWrap.hidden = false;
       window.scrollTo(0, 0);

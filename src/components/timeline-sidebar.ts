@@ -101,6 +101,21 @@ export const TimelineSidebar = (): HTMLElement => {
       openQuickPreview(entry);
     });
 
+    const deleteBtn = el(
+      "button",
+      {
+        class: "btn btn--sm btn--ghost timeline-item__btn timeline-item__btn--delete",
+        type: "button",
+        title: "Delete from timeline"
+      },
+      [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["delete"])]
+    );
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      timelineStore.removeEntry(entry.id);
+      toast(`Removed ${entry.fileName} from timeline`, "info");
+    });
+
     const routeLabel = entry.sourceLabel
       ? entry.targetLabel
         ? `${entry.sourceLabel} ➔ ${entry.targetLabel}`
@@ -140,7 +155,7 @@ export const TimelineSidebar = (): HTMLElement => {
             ].filter((n): n is HTMLElement => !!n)
           )
         ]),
-        el("div", { class: "timeline-item__actions" }, [downloadBtn, previewBtn])
+        el("div", { class: "timeline-item__actions" }, [downloadBtn, previewBtn, deleteBtn])
       ]
     );
 
