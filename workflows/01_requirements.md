@@ -14,6 +14,7 @@
 | F-03 | Semua tools bisa diakses tanpa login (kecuali BYOK untuk AI premium) | P0 |
 | F-04 | Berjalan di semua browser modern (Chrome, Firefox, Safari, Edge terbaru) | P0 |
 | F-05 | Responsive: desktop & mobile | P0 |
+| F-06 | **Universal Multi-Format Architecture**: Semua tools tidak boleh terbatas eksklusif pada 1 ekstensi file saja, melainkan WAJIB mendukung SELURUH format file yang cocok secara logika fiturnya (misal: Merge/Compress mendukung PDF, DOCX, XLSX, TXT, MD, PNG, JPG, WebP, AVIF). | P0 |
 
 ### 1.2 Documents & Files
 

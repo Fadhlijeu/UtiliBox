@@ -18,11 +18,13 @@
 - **Acceptance**: round-trip test (contoh file fixture DOCX/XLSX/PDF semua browser modern; error handling format tak dikenal; progress bar; ukuran hasil masuk akal).
 - **P0/P1**: PDF-TXT & PDF-MD & XLSX-DOCX simple first; DOCX-PDF layout fidelity P1.
 
-### 2. Compress Dokumen & Gambar
-- **PDF**: 3 preset (Extreme/Recommended/Low), + custom quality slider 1-100, DPI preset (72-300), opsi **grayscale**, opsi hapus metadata ink setelah compress. Target: file size reduction ditampilkan (%) 
-- **Gambar**: JPG/PNG/WebP/AVIF (squoosh engines local), quality slider, **before/after preview + % compare**, resize optional ketika compress.
-- **Engine**: pdf-lib (downsample), Canvas + libavif/mozjpeg-wasm webp, exifr strip.
-- **Acceptance**: memory crash test 100MB PDF (worker), output terbuka di pdf viewer.
+### 2. Compress (Kompresi Multi-Format: Dokumen & Gambar)
+- **Nama Tool**: **Compress** (bukan eksklusif PDF compress, melainkan kompresi universal dokumen & gambar).
+- **Format Input**: PDF, DOCX, XLSX, TXT, MD, JPG, PNG, WebP, AVIF.
+- **Dokumen (PDF & Text/Office Docs)**: 3 preset (Extreme/Recommended/Low), + custom quality slider 1-100%, DPI preset (72-300), opsi **grayscale (B&W)** untuk penurunan ukuran drastis, strip metadata & asset kompresi. Target: file size reduction (%) ditampilkan.
+- **Gambar (JPG/PNG/WebP/AVIF)**: Quality slider, resize preset, **before/after preview comparison slider + % compare badge**, opsi target format conversion (WebP/AVIF/JPG/PNG).
+- **Engine**: pdf-lib (downsample & grayscale), Canvas + WebP/AVIF encoders, exifr metadata strip.
+- **Acceptance**: Memory crash test 100MB file; output valid & dapat dibuka; indikator % reduction akurat.
 - **P0**.
 
 ### 3. Merge & Split (PDF editor: split, merge, delete, reorder, drag-n-move)

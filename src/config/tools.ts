@@ -32,7 +32,7 @@ export const CATEGORIES: { id: ToolCategory; label: string; icon: string }[] = [
 export const TOOLS: ToolMeta[] = [
   // ── Documents & Files ────────────────────────────────
   { id: "pdf-convert", title: "Convert Document", description: "Convert documents between formats", category: "documents", icon: "swap_horiz", tier: "P0" },
-  { id: "pdf-compress", title: "Compress", description: "Reduce PDF & image file size", category: "documents", icon: "compress", tier: "P0" },
+  { id: "compress", title: "Compress", description: "Reduce file size for documents & images", category: "documents", icon: "compress", tier: "P0" },
   { id: "pdf-organizer", title: "Merge & Split", description: "Merge, split, reorder & delete pages", category: "documents", icon: "auto_stories", tier: "P0" },
   { id: "ocr", title: "OCR", description: "Extract text from images & PDFs", category: "documents", icon: "text_snippet", tier: "P0" },
   { id: "encrypt", title: "Encryption", description: "Encrypt & decrypt files", category: "documents", icon: "enhanced_encryption", tier: "P1" },
@@ -73,7 +73,7 @@ export const TOOLS: ToolMeta[] = [
 ];
 
 export const toolById = (id: string): ToolMeta | undefined =>
-  TOOLS.find((t) => t.id === id);
+  TOOLS.find((t) => t.id === id || (id === "pdf-compress" && t.id === "compress"));
 
 export const toolsByCategory = (category: ToolCategory): ToolMeta[] =>
   TOOLS.filter((t) => t.category === category);
@@ -89,6 +89,9 @@ export const loadToolModule = async (
       return import("../tools/base64/index");
     case "pdf-organizer":
       return import("../tools/pdf-organizer/index");
+    case "compress":
+    case "pdf-compress":
+      return import("../tools/compress/index");
     default:
       throw new Error("not-implemented: " + id);
   }

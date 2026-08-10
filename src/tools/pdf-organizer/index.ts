@@ -78,11 +78,25 @@ const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<n
         added++;
         continue;
       }
-      if (!/\.pdf$/i.test(f.name)) {
-        toast(`Skipped (not PDF/image): ${f.name}`, "error");
+      const data = new Uint8Array(await readFileAsArrayBuffer(f));
+      if (/\.(txt|md|docx|xlsx)$/i.test(f.name)) {
+        const pdfData = await imageToPdf(data);
+        entries.push({
+          file: f,
+          data: pdfData,
+          originalData: pdfData.slice(),
+          pages: 1,
+          originalPages: 1,
+          order: [1],
+          kind: "image"
+        });
+        added++;
         continue;
       }
-      const data = new Uint8Array(await readFileAsArrayBuffer(f));
+      if (!/\.(pdf|png|jpe?g|webp|avif)$/i.test(f.name)) {
+        toast(`Skipped unsupported format: ${f.name}`, "error");
+        continue;
+      }
       if (!(await validatePdf(data))) {
         toast(`Invalid PDF: ${f.name}`, "error");
         continue;
