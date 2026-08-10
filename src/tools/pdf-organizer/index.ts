@@ -1,7 +1,8 @@
-﻿import { clear, el, readFileAsArrayBuffer } from "../../lib/dom";
+import { clear, el, readFileAsArrayBuffer } from "../../lib/dom";
 import { dropzone } from "../../components/dropzone";
 import { toast } from "../../components/toast";
 import { ToolShell, type Feature, type FeatureCtx } from "../../components/tool-shell";
+import { createHistoryBar, type HistoryBarApi } from "../../components/history-bar";
 import { fileThumb, pdfPageThumbs } from "../../lib/thumb";
 import { formatBytes, blobFromBytes } from "../../lib/files";
 import {
@@ -19,8 +20,10 @@ type Kind = "pdf" | "image";
 interface Entry {
   file: File;
   data: Uint8Array;
-  pages: number; // current page count (mutated by organize)
-  order: number[]; // 1-based page order (shared reorder state)
+  originalData: Uint8Array;
+  pages: number; // current page count
+  originalPages: number;
+  order: number[]; // 1-based page order
   kind: Kind;
 }
 
@@ -45,6 +48,12 @@ const onEntriesChange = (l: () => void): void => {
   listeners.push(l);
 };
 
+const withScrollPreserved = (fn: () => void): void => {
+  const scrollY = window.scrollY;
+  fn();
+  window.scrollTo({ top: scrollY, behavior: "instant" });
+};
+
 const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<number> => {
   const b = ctx.busy;
   let added = 0;
@@ -55,10 +64,13 @@ const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<n
       b.progress(i / files.length, `Reading ${i + 1}/${files.length}`);
       const kind = sniffKind(f);
       if (kind === "image") {
+        const raw = new Uint8Array(await readFileAsArrayBuffer(f));
         entries.push({
           file: f,
-          data: new Uint8Array(await readFileAsArrayBuffer(f)),
+          data: raw,
+          originalData: raw.slice(),
           pages: 1,
+          originalPages: 1,
           order: [1],
           kind
         });
@@ -79,7 +91,9 @@ const addFiles = async (files: File[], ctx: Pick<FeatureCtx, "busy">): Promise<n
       entries.push({
         file: f,
         data,
+        originalData: data.slice(),
         pages,
+        originalPages: pages,
         order: Array.from({ length: pages }, (_, i) => i + 1),
         kind
       });
@@ -103,8 +117,37 @@ const totalSize = (): number => entries.reduce((s, e) => s + e.file.size, 0);
 
 // ── shared list / grid helpers ────────────────────────────
 const fileListEl = (): HTMLElement => {
+  const container = el("div", { class: "file-list-container" });
   const list = el("ul", { class: "file-list" });
+  const header = el("div", { class: "file-list__head" });
+
   const render = () => {
+    if (!entries.length) {
+      container.replaceChildren();
+      return;
+    }
+
+    const deleteAllBtn = el(
+      "button",
+      { class: "btn btn--sm btn--danger", type: "button" },
+      [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["delete_forever"]),
+        "Delete all files"
+      ]
+    );
+    deleteAllBtn.addEventListener("click", () => {
+      entries.length = 0;
+      emitChange();
+      toast("All files deleted", "info");
+    });
+
+    header.replaceChildren(
+      el("span", { class: "muted file-list__summary" }, [
+        `${entries.length} file(s) · ${formatBytes(totalSize())}`
+      ]),
+      deleteAllBtn
+    );
+
     list.replaceChildren(
       ...entries.map((e, i) => {
         const thumbSlot = el("span", { class: "file-row__thumb" });
@@ -121,14 +164,18 @@ const fileListEl = (): HTMLElement => {
         ]);
       })
     );
+
+    container.replaceChildren(header, list);
   };
+
   list.addEventListener("click", (ev) => {
     const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>("[data-remove]");
     if (btn) removeEntry(Number(btn.dataset.remove));
   });
+
   onEntriesChange(render);
   render();
-  return list;
+  return container;
 };
 
 const dropzoneEl = (ctx: FeatureCtx, hint: string): HTMLElement =>
@@ -262,29 +309,41 @@ const mergeFeature: Feature = {
     const cloneItems = (): MergeItem[] => [...items];
 
     const relayoutFromCache = () => {
-      grid.replaceChildren(...items.map((it) => cellByItem.get(it)).filter((c): c is HTMLElement => !!c));
-      refreshPositions(grid);
+      withScrollPreserved(() => {
+        grid.replaceChildren(...items.map((it) => cellByItem.get(it)).filter((c): c is HTMLElement => !!c));
+        refreshPositions(grid);
+      });
     };
 
+    const mergeHistory = createHistoryBar({
+      baselineLabel: "Original order",
+      onReset: () => {
+        syncItems();
+        relayoutFromCache();
+      }
+    });
+
     const applyMove = (cell: HTMLElement, to: number) => {
-      const from = reorderDom(grid, cell, to);
-      if (from < 0) return;
-      const before = cloneItems();
-      const copy = [...items];
-      const [moved] = copy.splice(from, 1);
-      copy.splice(to, 0, moved);
-      items = copy;
-      const after = cloneItems();
-      ctx.pushHistory({
-        label: "reordered pages",
-        undo: () => {
-          items = before;
-          relayoutFromCache();
-        },
-        redo: () => {
-          items = after;
-          relayoutFromCache();
-        }
+      withScrollPreserved(() => {
+        const from = reorderDom(grid, cell, to);
+        if (from < 0) return;
+        const before = cloneItems();
+        const copy = [...items];
+        const [moved] = copy.splice(from, 1);
+        copy.splice(to, 0, moved);
+        items = copy;
+        const after = cloneItems();
+        mergeHistory.pushHistory({
+          label: "reordered pages",
+          undo: () => {
+            items = before;
+            relayoutFromCache();
+          },
+          redo: () => {
+            items = after;
+            relayoutFromCache();
+          }
+        });
       });
     };
 
@@ -319,7 +378,7 @@ const mergeFeature: Feature = {
           const e = entries[item.entryIdx];
           const thumb =
             item.page !== null ? thumbs.get(`${item.entryIdx}:${item.page}`) : imgNodes.get(item.entryIdx);
-          const cell = el("button", { class: "page-cell page-cell--merge", type: "button" }, [
+          const cell = el("div", { class: "page-cell page-cell--merge", tabindex: "0", role: "button" }, [
             thumb ?? el("span", { class: "muted" }, ["…"])
           ]);
           cell.appendChild(
@@ -331,7 +390,6 @@ const mergeFeature: Feature = {
                 : el("span", { class: "page-cell__tag page-cell__tag--img" }, ["IMG"])
             ])
           );
-          cell.addEventListener("click", () => void 0);
           bindDnd(cell, grid, state, (to) => applyMove(cell, to));
           moveButtons(cell, (delta) => {
             const to = liveIndex(grid, cell) + delta;
@@ -388,6 +446,7 @@ const mergeFeature: Feature = {
       dropzoneEl(ctx, "2+ files — PDF, PNG, JPG"),
       fileListEl(),
       status,
+      mergeHistory.node,
       grid,
       el("div", { class: "row" }, [mergeBtn])
     );
@@ -399,6 +458,7 @@ const mergeFeature: Feature = {
 interface PdfSectionApi {
   grid: HTMLElement;
   selected: Set<number>; // page numbers (1-based)
+  historyBar: HistoryBarApi;
   renderGrid: () => Promise<void>;
   relayoutFromOrder: () => void;
   clearSelection: () => void;
@@ -406,7 +466,9 @@ interface PdfSectionApi {
 
 interface SectionOpts {
   hint: string;
-  rows: Node[]; // extra rows below the grid (actions / selection bar)
+  topRows?: Node[];
+  bottomRows: Node[]; // extra rows below grid (actions / selection bar)
+  onReset?: () => void;
   onSelectionChange?: () => void;
   onOrderChange?: () => void;
 }
@@ -415,12 +477,17 @@ const buildPdfSection = (
   pdf: Entry,
   fileIdx: number,
   opts: SectionOpts,
-  ctx: Pick<FeatureCtx, "pushHistory" | "busy">
+  ctx: Pick<FeatureCtx, "busy">
 ): { section: HTMLElement; api: PdfSectionApi } => {
   const grid = el("div", { class: "page-grid" });
   const cellByPage = new Map<number, HTMLElement>();
   const selected = new Set<number>();
   const state: GridState = { from: -1, suppressUntil: 0 };
+
+  const historyBar = createHistoryBar({
+    baselineLabel: pdf.file.name,
+    onReset: opts.onReset
+  });
 
   const syncSelectionClasses = () => {
     grid.querySelectorAll<HTMLElement>(".page-cell").forEach((c) => {
@@ -430,11 +497,13 @@ const buildPdfSection = (
   };
 
   const relayoutFromOrder = () => {
-    grid.replaceChildren(
-      ...pdf.order.map((p) => cellByPage.get(p)).filter((c): c is HTMLElement => !!c)
-    );
-    refreshPositions(grid);
-    syncSelectionClasses();
+    withScrollPreserved(() => {
+      grid.replaceChildren(
+        ...pdf.order.map((p) => cellByPage.get(p)).filter((c): c is HTMLElement => !!c)
+      );
+      refreshPositions(grid);
+      syncSelectionClasses();
+    });
   };
 
   const applyOrderMove = (cell: HTMLElement, to: number) => {
@@ -447,10 +516,12 @@ const buildPdfSection = (
     copy.splice(to, 0, moved);
     pdf.order = copy;
     const after = [...pdf.order];
-    grid.insertBefore(cell, grid.children[to < from ? to : to + 1]);
-    refreshPositions(grid);
+    withScrollPreserved(() => {
+      grid.insertBefore(cell, grid.children[to < from ? to : to + 1]);
+      refreshPositions(grid);
+    });
     opts.onOrderChange?.();
-    ctx.pushHistory({
+    historyBar.pushHistory({
       label: "reordered pages",
       undo: () => {
         pdf.order = before;
@@ -472,7 +543,7 @@ const buildPdfSection = (
     try {
       cellByPage.clear();
       await pdfPageThumbs(pdf.data, (canvas, pageNum) => {
-        const cell = el("button", { class: "page-cell", type: "button" }, [canvas]);
+        const cell = el("div", { class: "page-cell", tabindex: "0", role: "button" }, [canvas]);
         cell.dataset.page = String(pageNum);
         cell.appendChild(el("span", { class: "page-cell__no" }, ["1"]));
         cell.appendChild(
@@ -486,6 +557,12 @@ const buildPdfSection = (
           else selected.add(pageNum);
           cell.classList.toggle("page-cell--selected", selected.has(pageNum));
           opts.onSelectionChange?.();
+        });
+        cell.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            cell.click();
+          }
         });
         bindDnd(cell, grid, state, (to) => applyOrderMove(cell, to));
         moveButtons(cell, (delta) => {
@@ -509,13 +586,16 @@ const buildPdfSection = (
       el("span", { class: "muted" }, [`${pdf.pages} pages · ${formatBytes(pdf.file.size)}`])
     ]),
     el("p", { class: "muted file-section__hint" }, [opts.hint]),
+    historyBar.node,
+    ...(opts.topRows ?? []),
     grid,
-    ...opts.rows
+    ...opts.bottomRows
   ]);
 
   const api: PdfSectionApi = {
     grid,
     selected,
+    historyBar,
     renderGrid,
     relayoutFromOrder,
     clearSelection: () => {
@@ -532,7 +612,7 @@ const buildSplitSection = (
   pdf: Entry,
   fileIdx: number,
   host: HTMLElement,
-  ctx: Pick<FeatureCtx, "pushHistory" | "busy">,
+  ctx: Pick<FeatureCtx, "busy">,
   opts: {
     rangeInput: HTMLInputElement;
     splitBtn: HTMLButtonElement;
@@ -545,18 +625,25 @@ const buildSplitSection = (
       .sort((a, b) => a - b);
     opts.rangeInput.value = pos.length ? pos.join(", ") : `1-${pdf.pages}`;
   };
+
   const built = buildPdfSection(
     pdf,
     fileIdx,
     {
       hint: "Drag pages to reorder (ranges follow the shown order) · click pages to pick ranges",
-      rows: [
+      topRows: [],
+      bottomRows: [
         el("div", { class: "row" }, [
           el("span", { class: "muted" }, ["Split by"]),
           opts.rangeInput,
           opts.splitBtn
         ])
       ],
+      onReset: () => {
+        pdf.order = Array.from({ length: pdf.pages }, (_, i) => i + 1);
+        built.api.relayoutFromOrder();
+        syncFromSelection(built.api.selected);
+      },
       onSelectionChange: () => syncFromSelection(built.api.selected),
       onOrderChange: () => syncFromSelection(built.api.selected)
     },
@@ -678,8 +765,8 @@ const splitFeature: Feature = {
       ]),
       dropzoneEl(ctx, "PDF files — split applies per file"),
       fileListEl(),
-      el("div", { class: "row" }, [splitAllBtn]),
-      sectionsHost
+      sectionsHost,
+      el("div", { class: "row" }, [splitAllBtn])
     );
   }
 };
@@ -723,7 +810,15 @@ const organizeFeature: Feature = {
         fileIdx,
         {
           hint: "Drag pages to reorder · click to select · Undo/Redo anytime",
-          rows: [bar, el("div", { class: "row file-section__actions" }, [saveBtn])],
+          topRows: [bar],
+          bottomRows: [el("div", { class: "row file-section__actions" }, [saveBtn])],
+          onReset: () => {
+            pdf.data = pdf.originalData.slice();
+            pdf.pages = pdf.originalPages;
+            pdf.order = Array.from({ length: pdf.pages }, (_, i) => i + 1);
+            built.api.clearSelection();
+            void built.api.renderGrid();
+          },
           onSelectionChange: () => refreshBar(built.api.selected)
         },
         ctx
@@ -747,7 +842,7 @@ const organizeFeature: Feature = {
         const beforePages = pdf.pages;
         const afterData = await extractPages(pdf.data, keep.map((p) => p - 1));
         const afterOrder = [...keep];
-        ctx.pushHistory({
+        api.historyBar.pushHistory({
           label: `deleted ${doomed.length} page(s)`,
           undo: () => {
             pdf.data = beforeData;
@@ -845,8 +940,9 @@ const organizeFeature: Feature = {
         "Dry-run before saving: drag to reorder, select & delete, Undo/Redo anytime."
       ]),
       dropzoneEl(ctx, "PDF files — organize applies per file"),
-      el("div", { class: "row" }, [organizeAllBtn]),
-      sectionsHost
+      fileListEl(),
+      sectionsHost,
+      el("div", { class: "row" }, [organizeAllBtn])
     );
   }
 };

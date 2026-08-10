@@ -109,7 +109,8 @@ Status sesi ini: lint ✅, test ✅ (26), build ✅. Terakhir di-cek komitman: "
 
 | Tanggal/Sesi | Aktivitas |
 |---|---|
-| 2026-08-09 (sesi ini) | Rebuild organizer (organizer per-file sections, drag reorder, undo/save); ToolShell back-button + aktivitas; OutputPanel modal preview + Pages strip; CSS semua komponen baru; fix icon `material-symbols-outlined` di tool.ts; handoff same-tool wiring; workflow F-68..73; buat progress.md ini |
+| 2026-08-10 (sesi ini) | **UX & History Refactoring**: Per-file history bar di atas preview grid untuk Split & Organize, 1 batch history bar untuk Merge; Reset mengembalikan ke baseline original tanpa hapus file; Tombol 'Delete all files' di header file list; Hamburger menu dropdown untuk checkpoints Undo/Redo; Fix scroll jump di file >25 halaman (`withScrollPreserved` & mengganti `<button>` dengan `<div class="page-cell" tabindex="0">`); Visual flow 'All' action buttons dipindah ke paling bawah (Upload > Preview > Output > Download/Action All). |
+| 2026-08-09 (round 1) | Rebuild organizer (organizer per-file sections, drag reorder, undo/save); ToolShell back-button + aktivitas; OutputPanel modal preview + Pages strip; CSS semua komponen baru; fix icon `material-symbols-outlined` di tool.ts; handoff same-tool wiring; workflow F-68..73; buat progress.md ini |
 | 2026-08-09 (round 2) | **FIX detach pdfjs `bytes.slice()`** (root cause delete parah); merge flat-grid preview + drag lintas file; split dengan preview + pilih-range/drag + `splitPdfByOrderRanges`; drag-move universal (bindDnd/isCleanClick/◀▶); picker delete (badge+fill+selection bar); independen per file; auto-open Pages strip PDF; F-74..F-78 |
 
 ## Tips

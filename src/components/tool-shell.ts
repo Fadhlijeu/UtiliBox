@@ -42,10 +42,8 @@ export const ToolShell = (
   const progress = busy();
   const result = OutputPanel();
 
-  const historyBar = el("div", { class: "history-bar", hidden: "hidden" }, []);
   const history: HistoryCmd[] = [];
   const redoStack: HistoryCmd[] = [];
-  let hasActivity = false;
 
   const resultWrap = el("div", { class: "result-view", hidden: "hidden" }, [
     el("div", { class: "result-view__head" }, [
@@ -64,50 +62,6 @@ export const ToolShell = (
     window.scrollTo(0, 0);
   });
 
-  const renderHistory = () => {
-    historyBar.hidden = !hasActivity;
-    historyBar.replaceChildren(
-      el("button", {
-        class: "btn btn--sm btn--ghost",
-        type: "button",
-        disabled: history.length === 0 ? "" : undefined,
-        "data-h": "undo",
-        title: history.length ? `${history.length} step(s) to undo` : "Nothing to undo"
-      }, [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["undo"]), "Undo"]),
-      el("button", {
-        class: "btn btn--sm btn--ghost",
-        type: "button",
-        disabled: redoStack.length === 0 ? "" : undefined,
-        "data-h": "redo"
-      }, [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["redo"]), "Redo"]),
-      el("button", {
-        class: "btn btn--sm btn--ghost",
-        type: "button",
-        "data-h": "reset"
-      }, [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["restart_alt"]), "Reset"])
-    );
-  };
-  renderHistory();
-
-  historyBar.addEventListener("click", (ev) => {
-    const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>("[data-h]");
-    if (!btn) return;
-    const action = btn.dataset.h;
-    if (action === "undo" && history.length) {
-      const cmd = history.pop()!;
-      redoStack.push(cmd);
-      cmd.undo();
-      renderHistory();
-    } else if (action === "redo" && redoStack.length) {
-      const cmd = redoStack.pop()!;
-      history.push(cmd);
-      cmd.redo();
-      renderHistory();
-    } else if (action === "reset") {
-      clearAll();
-    }
-  });
-
   const clearAll = () => {
     history.length = 0;
     redoStack.length = 0;
@@ -115,8 +69,6 @@ export const ToolShell = (
     resultWrap.hidden = true;
     workspace.classList.remove("hidden");
     opts.onReset?.();
-    hasActivity = false;
-    renderHistory();
     mountFeature(current);
   };
 
@@ -129,10 +81,8 @@ export const ToolShell = (
       window.scrollTo(0, 0);
     },
     pushHistory(cmd) {
-      hasActivity = true;
       history.push(cmd);
       redoStack.length = 0;
-      renderHistory();
     },
     reset: clearAll
   };
@@ -171,8 +121,7 @@ export const ToolShell = (
     el("div", { class: "tool-head__left" }, [
       el("h2", { class: "tool-title" }, [title]),
       el("span", { class: "tool-head__sub muted" }, ["preview first, then download — 100% local"])
-    ]),
-    historyBar
+    ])
   ]));
   root.appendChild(tabs);
   root.appendChild(workspace);
@@ -184,10 +133,7 @@ export const ToolShell = (
   return {
     node: root,
     /** mark that the tool has state worth undoing/resetting (e.g. files added) */
-    activity: () => {
-      hasActivity = true;
-      renderHistory();
-    },
+    activity: () => void 0,
     /** switch to a feature (used by handoff of same-tool) */
     activate: (id: string) => {
       const tab = tabs.querySelector<HTMLButtonElement>(`[data-feature="${id}"]`);
