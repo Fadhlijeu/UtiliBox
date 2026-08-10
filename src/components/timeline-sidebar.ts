@@ -23,13 +23,29 @@ export const TimelineSidebar = (): HTMLElement => {
     ]
   );
 
+  const clearBtn = el(
+    "button",
+    { class: "btn btn--ghost btn--sm timeline-sidebar__clear", type: "button", title: "Clear history graph" },
+    [
+      el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["delete_sweep"]),
+      "Clear"
+    ]
+  );
+  clearBtn.addEventListener("click", () => {
+    timelineStore.clear();
+    toast("File history graph cleared", "info");
+  });
+
   const head = el("div", { class: "timeline-sidebar__head" }, [
     el("div", { class: "timeline-sidebar__title-wrap" }, [
       el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["account_tree"]),
       el("strong", { class: "timeline-sidebar__title" }, ["File History Graph"])
     ]),
-    el("button", { class: "btn btn--ghost btn--sm timeline-sidebar__close", type: "button" }, [
-      el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["chevron_left"])
+    el("div", { class: "timeline-sidebar__head-actions" }, [
+      clearBtn,
+      el("button", { class: "btn btn--ghost btn--sm timeline-sidebar__close", type: "button" }, [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["chevron_left"])
+      ])
     ])
   ]);
 

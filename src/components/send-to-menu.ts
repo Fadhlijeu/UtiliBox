@@ -1,6 +1,6 @@
 import { el } from "../lib/dom";
 import { handoffTargetsFor, stageHandoff, type HandoffTarget } from "../lib/handoff";
-import { SAME_TOOL_EVENT, CLOSE_RESULT_EVENT, type OutputFile } from "./output-panel";
+import { SAME_TOOL_EVENT, type OutputFile } from "./output-panel";
 import { timelineStore } from "../lib/timeline-store";
 import { toast } from "./toast";
 
@@ -10,14 +10,12 @@ export const createSendToMenu = (
   currentFeatureId?: string
 ): HTMLElement => {
   const fileObj = new File([file.blob], file.name, { type: file.mime });
-  // Exclude current tool/feature tab to prevent self-handoff loops
   const targets = handoffTargetsFor(file.mime, currentToolId, currentFeatureId);
 
   if (!targets.length) {
     return el("span", { class: "muted text-xs" }, ["No handoff tools"]);
   }
 
-  // Group targets by toolId
   const toolGroups = new Map<string, { toolName: string; features: HandoffTarget[] }>();
   for (const t of targets) {
     let g = toolGroups.get(t.toolId);
@@ -44,8 +42,37 @@ export const createSendToMenu = (
 
   let activeMenu: HTMLElement | null = null;
 
+  const updatePosition = () => {
+    if (!activeMenu) return;
+    const rect = trigger.getBoundingClientRect();
+
+    if (rect.bottom < 0 || rect.top > window.innerHeight) {
+      closeMenu();
+      return;
+    }
+
+    const menuWidth = 220;
+    const menuHeight = activeMenu.offsetHeight || 200;
+    const margin = 12;
+
+    let top = rect.bottom + 4;
+    if (top + menuHeight > window.innerHeight - margin) {
+      top = Math.max(margin, rect.top - menuHeight - 4);
+    }
+
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin));
+
+    activeMenu.style.position = "fixed";
+    activeMenu.style.top = `${top}px`;
+    activeMenu.style.left = `${left}px`;
+  };
+
+  const onScrollOrResize = () => updatePosition();
+
   const closeMenu = () => {
     if (activeMenu) {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
       activeMenu.remove();
       activeMenu = null;
     }
@@ -64,18 +91,12 @@ export const createSendToMenu = (
     const sourceLabel = currentToolId ?? "Tool";
     const targetLabel = t.label.includes("→") ? t.label.split("→")[1]?.trim() ?? t.featureId : t.featureId;
 
-    window.dispatchEvent(new CustomEvent(CLOSE_RESULT_EVENT));
-
-    const entries = timelineStore.getEntries();
-    const parentEntry = entries.find((e) => e.fileName === file.name && e.toolId === (currentToolId ?? ""));
-
     timelineStore.addEntry({
       toolId: t.toolId,
       featureId: t.featureId,
       sourceLabel,
       targetLabel,
       lineage: "branch",
-      parentId: parentEntry?.id ?? null,
       fileName: file.name,
       blob: file.blob,
       mime: file.mime,
@@ -157,25 +178,15 @@ export const createSendToMenu = (
     });
 
     const menu = el("div", { class: "sendto-menu" }, menuItems);
-    const rect = trigger.getBoundingClientRect();
-    const menuWidth = 220;
-    const margin = 12;
-    const menuHeight = menuItems.length * 40 + 16;
-
-    let top = rect.bottom + 4;
-    if (top + menuHeight > window.innerHeight - margin) {
-      top = Math.max(margin, rect.top - menuHeight - 4);
-    }
-
-    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin));
-
-    menu.style.position = "fixed";
-    menu.style.top = `${top}px`;
-    menu.style.left = `${left}px`;
     menu.style.zIndex = "1000";
 
     document.body.appendChild(menu);
     activeMenu = menu;
+
+    updatePosition();
+
+    window.addEventListener("scroll", onScrollOrResize, { capture: true, passive: true });
+    window.addEventListener("resize", onScrollOrResize, { passive: true });
   });
 
   return trigger;

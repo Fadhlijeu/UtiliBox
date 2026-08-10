@@ -28,11 +28,37 @@ export const createHistoryBar = (opts: HistoryBarOptions = {}): HistoryBarApi =>
   const baselineLabel = opts.baselineLabel ?? "Original state";
 
   let activeMenu: HTMLElement | null = null;
+  let activeAnchor: HTMLElement | null = null;
+
+  const updatePosition = () => {
+    if (!activeMenu || !activeAnchor) return;
+    const rect = activeAnchor.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) {
+      closeMenus();
+      return;
+    }
+    const menuWidth = 240;
+    const menuHeight = activeMenu.offsetHeight || 180;
+    const margin = 12;
+    let top = rect.bottom + 4;
+    if (top + menuHeight > window.innerHeight - margin) {
+      top = Math.max(margin, rect.top - menuHeight - 4);
+    }
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin));
+    activeMenu.style.position = "fixed";
+    activeMenu.style.top = `${top}px`;
+    activeMenu.style.left = `${left}px`;
+  };
+
+  const onScrollOrResize = () => updatePosition();
 
   const closeMenus = () => {
     if (activeMenu) {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
       activeMenu.remove();
       activeMenu = null;
+      activeAnchor = null;
     }
   };
 
@@ -67,7 +93,6 @@ export const createHistoryBar = (opts: HistoryBarOptions = {}): HistoryBarApi =>
     if (history.length === 0) return;
 
     const items: HTMLElement[] = [];
-    // List from top of stack (most recent) down to baseline
     for (let i = history.length - 1; i >= 0; i--) {
       const stepsToUndo = history.length - i;
       const item = el(
@@ -88,8 +113,6 @@ export const createHistoryBar = (opts: HistoryBarOptions = {}): HistoryBarApi =>
 
     const menu = el("div", { class: "history-menu" }, items);
     positionMenu(menu, anchor);
-    document.body.appendChild(menu);
-    activeMenu = menu;
   };
 
   const openRedoMenu = (anchor: HTMLElement) => {
@@ -97,7 +120,6 @@ export const createHistoryBar = (opts: HistoryBarOptions = {}): HistoryBarApi =>
     if (redoStack.length === 0) return;
 
     const items: HTMLElement[] = [];
-    // List from top of redo stack (next redo) forward
     for (let i = redoStack.length - 1; i >= 0; i--) {
       const stepsToRedo = redoStack.length - i;
       const item = el(
@@ -118,16 +140,16 @@ export const createHistoryBar = (opts: HistoryBarOptions = {}): HistoryBarApi =>
 
     const menu = el("div", { class: "history-menu" }, items);
     positionMenu(menu, anchor);
-    document.body.appendChild(menu);
-    activeMenu = menu;
   };
 
   const positionMenu = (menu: HTMLElement, anchor: HTMLElement) => {
-    const rect = anchor.getBoundingClientRect();
-    menu.style.position = "fixed";
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 240))}px`;
+    activeAnchor = anchor;
     menu.style.zIndex = "1000";
+    document.body.appendChild(menu);
+    activeMenu = menu;
+    updatePosition();
+    window.addEventListener("scroll", onScrollOrResize, { capture: true, passive: true });
+    window.addEventListener("resize", onScrollOrResize, { passive: true });
   };
 
   const render = () => {
@@ -201,45 +223,45 @@ export const createHistoryBar = (opts: HistoryBarOptions = {}): HistoryBarApi =>
     const resetBtn = el(
       "button",
       {
-        class: "btn btn--sm btn--ghost",
+        class: "btn btn--sm btn--ghost history-bar__reset",
         type: "button",
-        disabled: history.length === 0 ? "" : undefined,
         title: `Reset to ${baselineLabel}`
       },
-      [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["restart_alt"]), "Reset"]
+      [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["restart_alt"]),
+        "Reset"
+      ]
     );
     resetBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (history.length > 0) {
-        runUndoSteps(history.length);
-        opts.onReset?.();
-      }
+      closeMenus();
+      history.length = 0;
+      redoStack.length = 0;
+      opts.onReset?.();
+      render();
     });
 
-    root.replaceChildren(undoGroup, redoGroup, resetBtn);
-  };
+    const info = el("span", { class: "history-bar__info muted text-xs" }, [
+      history.length ? `${history.length} action(s)` : baselineLabel
+    ]);
 
-  const resetAll = () => {
-    closeMenus();
-    if (history.length > 0) {
-      runUndoSteps(history.length);
-    }
-    history.length = 0;
-    redoStack.length = 0;
-    opts.onReset?.();
-    render();
+    root.replaceChildren(undoGroup, redoGroup, resetBtn, info);
   };
 
   render();
 
   return {
     node: root,
-    pushHistory: (cmd: HistoryCheckpoint) => {
+    pushHistory(cmd) {
       history.push(cmd);
       redoStack.length = 0;
       render();
     },
-    reset: resetAll,
+    reset() {
+      history.length = 0;
+      redoStack.length = 0;
+      render();
+    },
     hasHistory: () => history.length > 0 || redoStack.length > 0
   };
 };

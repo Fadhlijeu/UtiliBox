@@ -564,21 +564,41 @@ const buildPdfSection = (
   const applyOrderMove = (from: number, to: number) => {
     const kids = Array.from(grid.children);
     if (from < 0 || to < 0 || from === to || from >= kids.length || to >= kids.length) return;
-    const cell = kids[from] as HTMLElement;
     const fromPage = pdf.order[from];
+    const targetPage = pdf.order[to];
+
     withScrollPreserved(() => {
-      const actualFrom = reorderDom(grid, cell, to);
-      if (actualFrom < 0) return;
       const before = [...pdf.order];
-      const copy = [...before];
-      const [moved] = copy.splice(from, 1);
-      copy.splice(to, 0, moved);
+      let copy: number[] = [];
+      let label = "";
+
+      if (selected.has(fromPage) && selected.size > 1) {
+        // Bulk drag & move contiguous block of selected pages
+        const movingPages = pdf.order.filter((p) => selected.has(p));
+        const remaining = pdf.order.filter((p) => !selected.has(p));
+        let insertIdx = remaining.indexOf(targetPage);
+        if (insertIdx < 0) insertIdx = remaining.length;
+        if (from < to) insertIdx += 1;
+        remaining.splice(insertIdx, 0, ...movingPages);
+        copy = remaining;
+        label = `Moved ${movingPages.length} selected pages to position ${to + 1}`;
+      } else {
+        // Single page move
+        const cell = kids[from] as HTMLElement;
+        reorderDom(grid, cell, to);
+        copy = [...before];
+        const [moved] = copy.splice(from, 1);
+        copy.splice(to, 0, moved);
+        label = `Moved page ${fromPage} to position ${to + 1}`;
+      }
+
       pdf.order = copy;
       const after = [...pdf.order];
-      refreshPositions(grid);
+      relayoutFromOrder();
       opts.onOrderChange?.();
+
       historyBar.pushHistory({
-        label: `Moved page ${fromPage} to position ${to + 1}`,
+        label,
         undo: () => {
           pdf.order = before;
           relayoutFromOrder();
