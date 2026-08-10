@@ -1089,7 +1089,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   top: 0;
   left: 0;
   bottom: 0;
-  width: 300px;
+  width: 360px;
   z-index: 90;
   display: flex;
   flex-direction: column;
@@ -1100,7 +1100,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 }
 
 .timeline-sidebar--closed {
-  transform: translateX(-300px);
+  transform: translateX(-360px);
 }
 
 .timeline-sidebar--open {
@@ -1110,7 +1110,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
 .timeline-sidebar__toggle {
   position: absolute;
   top: 72px;
-  left: 300px;
+  left: 360px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1191,74 +1191,158 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   text-align: center;
 }
 
-.timeline-item {
+/* ── Pipeline Chain Cards (Konsep A) ─────────────── */
+
+.pipeline-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-paper-2);
+  background: var(--color-paper-1);
+  box-shadow: 0 2px 6px oklch(0% 0 0 / 0.04);
   cursor: pointer;
-  transition: border-color var(--duration-fast), background var(--duration-fast);
+  transition: all var(--duration-fast) var(--ease-standard);
 }
 
-.timeline-item:hover {
+.pipeline-card:hover {
   border-color: var(--color-accent-strong);
+  box-shadow: 0 4px 12px oklch(0% 0 0 / 0.08);
+  transform: translateY(-1px);
+}
+
+.pipeline-card--branch {
+  border-left: 3px solid var(--color-accent-strong);
   background: var(--color-paper-1);
 }
 
-.timeline-item__thumb {
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  background: var(--color-paper-3);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.timeline-item__thumb .thumb-img,
-.timeline-item__thumb .thumb-canvas {
-  width: 38px;
-  height: 38px;
-  object-fit: cover;
-  display: block;
-}
-
-.timeline-item__content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.timeline-item__name {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.timeline-item__meta {
+.pipeline-card__head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
+}
+
+.pipeline-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.pipeline-badge--main {
+  background: oklch(50% 0.2 150 / 0.15);
+  color: oklch(35% 0.25 150);
+}
+
+.pipeline-badge--branch {
+  background: oklch(60% 0.2 270 / 0.15);
+  color: oklch(35% 0.25 270);
+}
+
+.pipeline-card__time {
   font-size: 11px;
 }
 
-.timeline-item__actions {
+/* 3-Step Chain Box: Input -> Action -> Output */
+.pipeline-chain {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.pipeline-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+
+.pipeline-step__icon {
+  font-size: 16px;
+  color: var(--color-ink-muted);
+}
+
+.pipeline-step--input .pipeline-step__icon {
+  color: oklch(50% 0.2 220);
+}
+
+.pipeline-step--action .pipeline-step__icon {
+  color: oklch(50% 0.2 40);
+}
+
+.pipeline-step--output .pipeline-step__icon {
+  color: oklch(50% 0.2 150);
+}
+
+.pipeline-step__title {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-ink-muted);
+}
+
+.pipeline-step__desc {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 76px;
+}
+
+.pipeline-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--color-ink-muted);
+  opacity: 0.5;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Footer: Restore button + icon actions */
+.pipeline-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+
+.pipeline-btn--restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.pipeline-card__quick-actions {
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
-.timeline-item__btn {
+.pipeline-card__icon-btn {
   padding: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.pipeline-card__icon-btn--delete:hover {
+  color: oklch(55% 0.22 25);
+  background: oklch(55% 0.22 25 / 0.1);
 }
 
 /* ── Timeline Tree Graph & Branch Connectors ────── */
@@ -1267,30 +1351,6 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-}
-
-.timeline-item__head-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-}
-
-.timeline-item__badge {
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.timeline-item__badge--main {
-  background: oklch(50% 0.2 250 / 0.15);
-  color: oklch(40% 0.25 250);
-}
-
-.timeline-item__badge--branch {
-  background: oklch(60% 0.2 150 / 0.15);
-  color: oklch(35% 0.25 150);
 }
 
 .timeline-branch-group {
@@ -1307,9 +1367,4 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-}
-
-.timeline-item--branch {
-  border-left: 3px solid var(--color-accent-strong);
-  background: var(--color-paper-1);
 }

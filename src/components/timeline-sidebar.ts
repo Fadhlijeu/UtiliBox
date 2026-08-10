@@ -1,6 +1,5 @@
 import { el } from "../lib/dom";
 import { downloadBlob } from "../lib/files";
-import { fileThumb } from "../lib/thumb";
 import { stageHandoff } from "../lib/handoff";
 import { SAME_TOOL_EVENT } from "./output-panel";
 import { timelineStore, type TimelineEntry } from "../lib/timeline-store";
@@ -72,17 +71,21 @@ export const TimelineSidebar = (): HTMLElement => {
   toggleBtn.addEventListener("click", () => toggle());
   head.querySelector(".timeline-sidebar__close")?.addEventListener("click", () => toggle(false));
 
-  const renderCard = (entry: TimelineEntry, isBranch: boolean): HTMLElement => {
-    const thumbSlot = el("span", { class: "timeline-item__thumb" });
-    const file = new File([entry.blob], entry.fileName, { type: entry.mime });
+  const getActionIcon = (featureId: string): string => {
+    if (featureId.includes("merge")) return "merge_type";
+    if (featureId.includes("split")) return "content_cut";
+    if (featureId.includes("organize")) return "grid_view";
+    if (featureId.includes("compress")) return "compress";
+    if (featureId.includes("convert")) return "transform";
+    return "build";
+  };
 
-    void fileThumb(file).then((t) => {
-      if (t?.node) thumbSlot.replaceChildren(t.node);
-    });
+  const renderCard = (entry: TimelineEntry, isBranch: boolean): HTMLElement => {
+    const file = new File([entry.blob], entry.fileName, { type: entry.mime });
 
     const downloadBtn = el(
       "button",
-      { class: "btn btn--sm btn--ghost timeline-item__btn", type: "button", title: "Download" },
+      { class: "btn btn--sm btn--ghost pipeline-card__icon-btn", type: "button", title: "Download output" },
       [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["download"])]
     );
     downloadBtn.addEventListener("click", (e) => {
@@ -93,7 +96,7 @@ export const TimelineSidebar = (): HTMLElement => {
 
     const previewBtn = el(
       "button",
-      { class: "btn btn--sm btn--ghost timeline-item__btn", type: "button", title: "Preview" },
+      { class: "btn btn--sm btn--ghost pipeline-card__icon-btn", type: "button", title: "Quick Preview" },
       [el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["visibility"])]
     );
     previewBtn.addEventListener("click", (e) => {
@@ -104,7 +107,7 @@ export const TimelineSidebar = (): HTMLElement => {
     const deleteBtn = el(
       "button",
       {
-        class: "btn btn--sm btn--ghost timeline-item__btn timeline-item__btn--delete",
+        class: "btn btn--sm btn--ghost pipeline-card__icon-btn pipeline-card__icon-btn--delete",
         type: "button",
         title: "Delete from timeline"
       },
@@ -116,46 +119,80 @@ export const TimelineSidebar = (): HTMLElement => {
       toast(`Removed ${entry.fileName} from timeline`, "info");
     });
 
-    const routeLabel = entry.sourceLabel
-      ? entry.targetLabel
-        ? `${entry.sourceLabel} ➔ ${entry.targetLabel}`
-        : entry.sourceLabel
-      : entry.targetLabel
-        ? entry.targetLabel
-        : entry.featureId;
+    const inputs = entry.inputFiles ?? [];
+    const inputCount = inputs.length > 0 ? inputs.length : 1;
+    const inputNames = inputs.length > 0 ? inputs.map((f) => f.name).join(", ") : entry.fileName;
+    const inputLabel = inputs.length > 1 ? `${inputCount} Files` : (inputs[0]?.name ?? entry.fileName);
 
-    const lineageTag = isBranch ? "Branch" : "Main";
+    const actionName = entry.sourceLabel ?? entry.featureId ?? "Process";
+    const actionIcon = getActionIcon(entry.featureId);
+
+    const restoreBtn = el(
+      "button",
+      { class: "btn btn--sm btn--primary pipeline-btn--restore", type: "button" },
+      [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["restore"]),
+        "Restore & Edit"
+      ]
+    );
 
     const card = el(
       "div",
       {
-        class: `timeline-item ${isBranch ? "timeline-item--branch" : "timeline-item--main"}`,
+        class: `pipeline-card ${isBranch ? "pipeline-card--branch" : "pipeline-card--main"}`,
         tabindex: "0",
         role: "button"
       },
       [
-        thumbSlot,
-        el("div", { class: "timeline-item__content" }, [
-          el("div", { class: "timeline-item__head-line" }, [
-            el("span", { class: "timeline-item__name", title: entry.fileName }, [entry.fileName]),
-            el(
-              "span",
-              { class: `timeline-item__badge ${isBranch ? "timeline-item__badge--branch" : "timeline-item__badge--main"}` },
-              [isBranch ? `↳ ${lineageTag}` : lineageTag]
-            )
-          ]),
-          el("span", { class: "timeline-item__route muted" }, [routeLabel]),
+        // Head bar: lineage badge + timestamp
+        el("div", { class: "pipeline-card__head" }, [
           el(
-            "div",
-            { class: "timeline-item__meta" },
-            [
-              el("span", { class: "muted" }, [entry.timestamp]),
-              entry.pages ? el("span", { class: "muted" }, [`${entry.pages} pg`]) : null,
-              el("span", { class: "muted" }, [entry.formattedSize])
-            ].filter((n): n is HTMLElement => !!n)
-          )
+            "span",
+            { class: `pipeline-badge ${isBranch ? "pipeline-badge--branch" : "pipeline-badge--main"}` },
+            [isBranch ? "↳ Branch" : "🟢 Main"]
+          ),
+          el("span", { class: "pipeline-card__time muted" }, [entry.timestamp])
         ]),
-        el("div", { class: "timeline-item__actions" }, [downloadBtn, previewBtn, deleteBtn])
+
+        // Visual Pipeline Chain: Input -> Action -> Output
+        el("div", { class: "pipeline-chain" }, [
+          // Step 1: Input
+          el("div", { class: "pipeline-step pipeline-step--input", title: `Input: ${inputNames}` }, [
+            el("span", { class: "material-symbols-outlined pipeline-step__icon" }, ["folder_open"]),
+            el("span", { class: "pipeline-step__title" }, ["Input"]),
+            el("span", { class: "pipeline-step__desc" }, [inputLabel])
+          ]),
+
+          // Arrow 1
+          el("div", { class: "pipeline-arrow" }, [
+            el("span", { class: "material-symbols-outlined" }, ["arrow_forward"])
+          ]),
+
+          // Step 2: Action
+          el("div", { class: "pipeline-step pipeline-step--action" }, [
+            el("span", { class: "material-symbols-outlined pipeline-step__icon" }, [actionIcon]),
+            el("span", { class: "pipeline-step__title" }, [actionName]),
+            el("span", { class: "pipeline-step__desc" }, [entry.pages ? `${entry.pages} pg` : "Ready"])
+          ]),
+
+          // Arrow 2
+          el("div", { class: "pipeline-arrow" }, [
+            el("span", { class: "material-symbols-outlined" }, ["arrow_forward"])
+          ]),
+
+          // Step 3: Output
+          el("div", { class: "pipeline-step pipeline-step--output", title: `Output: ${entry.fileName}` }, [
+            el("span", { class: "material-symbols-outlined pipeline-step__icon" }, ["description"]),
+            el("span", { class: "pipeline-step__title" }, ["Output"]),
+            el("span", { class: "pipeline-step__desc" }, [entry.fileName])
+          ])
+        ]),
+
+        // Card footer: Restore & Edit button + Quick Actions
+        el("div", { class: "pipeline-card__footer" }, [
+          restoreBtn,
+          el("div", { class: "pipeline-card__quick-actions" }, [downloadBtn, previewBtn, deleteBtn])
+        ])
       ]
     );
 
@@ -164,7 +201,7 @@ export const TimelineSidebar = (): HTMLElement => {
         entry.inputFiles && entry.inputFiles.length > 0 ? entry.inputFiles : [file];
 
       stageHandoff(entry.toolId, activeInputFiles);
-      toast(`Restored history: ${entry.fileName} (${routeLabel})`, "info");
+      toast(`Restored history: ${entry.fileName}`, "info");
 
       const outputFiles = entry.outputFiles ?? [
         {
@@ -198,6 +235,11 @@ export const TimelineSidebar = (): HTMLElement => {
         );
       }, 50);
     };
+
+    restoreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      restoreState();
+    });
 
     card.addEventListener("click", restoreState);
     card.addEventListener("keydown", (e) => {
