@@ -737,19 +737,32 @@ const createModeControl = (
 function openPresetConfigModal(preset: PresetConfig, onSave: () => void) {
   const backdrop = el("div", { class: "modal-backdrop show" });
 
+  let selectedMode: CompressMode = preset.mode;
+
   const titleInput = el("input", {
     type: "text",
     value: preset.name,
     class: "input",
-    style: "font-weight: 700;"
+    style: "font-weight: 700; font-size: 13px;"
   }) as HTMLInputElement;
 
-  const modeSelect = el("select", { class: "select" }, [
-    el("option", { value: "quality", selected: preset.mode === "quality" ? "selected" : undefined }, ["Quality Slider Mode"]),
-    el("option", { value: "target-size", selected: preset.mode === "target-size" ? "selected" : undefined }, ["Target Size Match Mode"])
-  ]) as HTMLSelectElement;
+  const tabQuality = el("button", {
+    class: `compress-mode-pill ${selectedMode === "quality" ? "compress-mode-pill--active" : ""}`,
+    type: "button"
+  }, [
+    el("span", { class: "material-symbols-outlined text-xs" }, ["tune"]),
+    "Quality Slider"
+  ]);
 
-  const precisionSelect = el("select", { class: "select" }, [
+  const tabTarget = el("button", {
+    class: `compress-mode-pill ${selectedMode === "target-size" ? "compress-mode-pill--active" : ""}`,
+    type: "button"
+  }, [
+    el("span", { class: "material-symbols-outlined text-xs" }, ["track_changes"]),
+    "Target Size Match"
+  ]);
+
+  const precisionSelect = el("select", { class: "select", style: "font-size: 11px;" }, [
     el("option", { value: "exact", selected: preset.precision === "exact" ? "selected" : undefined }, ["Exact Match (~100%)"]),
     el("option", { value: "approx", selected: preset.precision === "approx" ? "selected" : undefined }, ["Approx (Max Ceiling)"])
   ]) as HTMLSelectElement;
@@ -760,10 +773,10 @@ function openPresetConfigModal(preset: PresetConfig, onSave: () => void) {
     step: "0.1",
     value: String(preset.targetVal),
     class: "input",
-    style: "width: 70px; font-weight: 700;"
+    style: "width: 75px; font-weight: 700; font-family: var(--font-mono); font-size: 12px;"
   }) as HTMLInputElement;
 
-  const unitSelect = el("select", { class: "select" }, [
+  const unitSelect = el("select", { class: "select", style: "font-weight: 700; font-size: 11px;" }, [
     el("option", { value: "MB", selected: preset.targetUnit === "MB" ? "selected" : undefined }, ["MB"]),
     el("option", { value: "KB", selected: preset.targetUnit === "KB" ? "selected" : undefined }, ["KB"])
   ]) as HTMLSelectElement;
@@ -776,16 +789,56 @@ function openPresetConfigModal(preset: PresetConfig, onSave: () => void) {
     class: "compress-slider-gradient"
   }) as HTMLInputElement;
 
-  const qualityValueLabel = el("span", { class: "font-mono font-bold text-xs" }, [`${preset.qualityVal}%`]);
+  const qualityValueLabel = el("span", { class: "compress-value-badge" }, [`${preset.qualityVal}% Quality`]);
 
   qualityInput.addEventListener("input", () => {
-    qualityValueLabel.textContent = `${qualityInput.value}%`;
+    qualityValueLabel.textContent = `${qualityInput.value}% Quality`;
   });
 
-  const saveBtn = el("button", { class: "btn btn--primary", type: "button" }, ["Save Settings"]);
+  const targetSection = el("div", { class: "row gap-md align-center", style: "transition: opacity 0.2s; margin: 0;" }, [
+    el("div", { class: "column gap-2xs", style: "flex: 1;" }, [
+      el("label", { class: "field-label text-2xs" }, ["Target Size:"]),
+      el("div", { class: "row gap-xs align-center", style: "margin: 0;" }, [targetInput, unitSelect])
+    ]),
+    el("div", { class: "column gap-2xs", style: "flex: 1;" }, [
+      el("label", { class: "field-label text-2xs" }, ["Match Precision:"]),
+      precisionSelect
+    ])
+  ]);
+
+  const qualitySection = el("div", { class: "column gap-xs", style: "transition: opacity 0.2s; margin: 0;" }, [
+    el("div", { class: "row justify-between align-center", style: "margin: 0;" }, [
+      el("label", { class: "field-label text-2xs" }, ["Compression Quality Level:"]),
+      qualityValueLabel
+    ]),
+    qualityInput
+  ]);
+
+  const updateModalState = (mode: CompressMode) => {
+    selectedMode = mode;
+    tabQuality.classList.toggle("compress-mode-pill--active", mode === "quality");
+    tabTarget.classList.toggle("compress-mode-pill--active", mode === "target-size");
+
+    targetSection.style.opacity = mode === "target-size" ? "1" : "0.35";
+    targetSection.style.pointerEvents = mode === "target-size" ? "auto" : "none";
+
+    qualitySection.style.opacity = mode === "quality" ? "1" : "0.35";
+    qualitySection.style.pointerEvents = mode === "quality" ? "auto" : "none";
+  };
+
+  tabQuality.addEventListener("click", () => updateModalState("quality"));
+  tabTarget.addEventListener("click", () => updateModalState("target-size"));
+
+  updateModalState(selectedMode);
+
+  const saveBtn = el("button", { class: "btn btn--primary", type: "button" }, [
+    el("span", { class: "material-symbols-outlined text-xs" }, ["check"]),
+    "Save Preset Settings"
+  ]);
+
   saveBtn.addEventListener("click", () => {
     preset.name = titleInput.value || preset.name;
-    preset.mode = modeSelect.value as CompressMode;
+    preset.mode = selectedMode;
     preset.precision = precisionSelect.value as TargetPrecision;
     preset.targetVal = Number(targetInput.value) || 1.0;
     preset.targetUnit = unitSelect.value as "MB" | "KB";
@@ -799,39 +852,38 @@ function openPresetConfigModal(preset: PresetConfig, onSave: () => void) {
     document.body.removeChild(backdrop);
   });
 
-  const modalCard = el("div", { class: "modal-card", style: "max-width: 440px;" }, [
-    el("div", { class: "modal-header" }, [
-      el("div", { class: "modal-title" }, ["Preset Independent Configuration"]),
-      closeBtn
+  const closeHeaderBtn = el("button", { class: "btn btn--xs btn--ghost", type: "button", title: "Close" }, ["✕"]);
+  closeHeaderBtn.addEventListener("click", () => {
+    document.body.removeChild(backdrop);
+  });
+
+  const modalCard = el("div", { class: "modal-card-pro" }, [
+    el("div", { class: "modal-header-pro" }, [
+      el("div", { class: "column gap-3xs" }, [
+        el("div", { class: "row gap-xs align-center", style: "margin: 0;" }, [
+          el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["settings_suggest"]),
+          el("span", { class: "modal-title-pro" }, ["Configure Preset Bucket"])
+        ]),
+        el("span", { class: "muted text-2xs" }, ["Independent compression settings for assigned files"])
+      ]),
+      closeHeaderBtn
     ]),
     el("div", { class: "column gap-md", style: "padding: 16px 0;" }, [
-      el("div", { class: "column gap-xs" }, [
-        el("label", { class: "field-label text-xs" }, ["Preset Name:"]),
+      el("div", { class: "column gap-2xs" }, [
+        el("label", { class: "field-label text-2xs" }, ["Preset Name:"]),
         titleInput
       ]),
-      el("div", { class: "column gap-xs" }, [
-        el("label", { class: "field-label text-xs" }, ["Compression Mode:"]),
-        modeSelect
+      el("div", { class: "column gap-2xs" }, [
+        el("label", { class: "field-label text-2xs" }, ["Compression Mode:"]),
+        el("div", { class: "compress-mode-toggle-group", style: "margin: 0;" }, [tabQuality, tabTarget])
       ]),
-      el("div", { class: "row gap-md align-center" }, [
-        el("div", { class: "column gap-xs", style: "flex:1;" }, [
-          el("label", { class: "field-label text-xs" }, ["Target Precision:"]),
-          precisionSelect
-        ]),
-        el("div", { class: "column gap-xs", style: "flex:1;" }, [
-          el("label", { class: "field-label text-xs" }, ["Target Size:"]),
-          el("div", { class: "row gap-xs align-center" }, [targetInput, unitSelect])
-        ])
-      ]),
-      el("div", { class: "column gap-xs" }, [
-        el("div", { class: "row justify-between align-center" }, [
-          el("label", { class: "field-label text-xs" }, ["Quality Level:"]),
-          qualityValueLabel
-        ]),
-        qualityInput
-      ])
+      targetSection,
+      qualitySection
     ]),
-    el("div", { class: "row justify-end gap-xs" }, [closeBtn, saveBtn])
+    el("div", { class: "row justify-end gap-xs", style: "margin: 0; padding-top: 12px; border-top: 1px solid var(--color-border);" }, [
+      closeBtn,
+      saveBtn
+    ])
   ]);
 
   backdrop.appendChild(modalCard);
@@ -868,7 +920,7 @@ const createPresetManager = (
     });
 
     const header = el("div", { class: "compress-presets-manager-header", style: "display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;" }, [
-      el("div", { class: "row align-center gap-xs" }, [
+      el("div", { class: "row align-center gap-xs", style: "margin: 0;" }, [
         el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["folder_special"]),
         el("span", { class: "font-bold text-xs" }, ["Preset Buckets"]),
         el("span", { class: "muted text-2xs" }, [`(${presets.length} Active)`])
@@ -879,20 +931,22 @@ const createPresetManager = (
     if (!presets.length) {
       host.append(
         header,
-        el("div", { class: "compress-preset-empty-hint text-2xs muted", style: "padding: 10px; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); text-align: center;" }, [
+        el("div", { class: "compress-preset-empty-hint text-2xs muted", style: "padding: 10px; border: 1px dashed var(--color-border); border-radius: var(--radius-md); text-align: center; background: var(--color-paper-2);" }, [
           "No independent preset buckets created. Staged files will automatically use Global Settings."
         ])
       );
       return;
     }
 
-    const cardsGrid = el("div", { class: "compress-preset-cards-grid", style: "display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;" });
+    const cardsGrid = el("div", { class: "compress-preset-cards-grid", style: "display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px;" });
 
     presets.forEach((p) => {
       const assignedCount = entries.filter((e) => filterKind(e) && e.presetId === p.id).length;
-      const configTag = p.mode === "target-size" ? `${p.targetVal} ${p.targetUnit} (${p.precision})` : `${p.qualityVal}% Quality`;
+      const configTag = p.mode === "target-size"
+        ? `🎯 ${p.targetVal} ${p.targetUnit} (${p.precision})`
+        : `✨ ${p.qualityVal}% Quality`;
 
-      const configBtn = el("button", { class: "btn btn--xs btn--ghost", type: "button", title: "Configure Preset" }, [
+      const configBtn = el("button", { class: "btn btn--xs btn--ghost", type: "button", title: "Configure Preset", style: "padding: 2px 6px;" }, [
         el("span", { class: "material-symbols-outlined text-xs" }, ["settings"]),
         "Config"
       ]);
@@ -904,7 +958,7 @@ const createPresetManager = (
         });
       });
 
-      const delBtn = el("button", { class: "btn btn--xs btn--ghost", type: "button", title: "Delete Preset", style: "color: var(--color-error);" }, ["✕"]);
+      const delBtn = el("button", { class: "btn btn--xs btn--ghost", type: "button", title: "Delete Preset", style: "color: var(--color-error); padding: 2px 6px;" }, ["✕"]);
       delBtn.addEventListener("click", () => {
         const idx = presets.indexOf(p);
         if (idx !== -1) {
@@ -916,17 +970,17 @@ const createPresetManager = (
         }
       });
 
-      const card = el("div", { class: "compress-preset-card-shadcn" }, [
-        el("div", { class: "compress-preset-card-shadcn__head" }, [
-          el("div", { class: "compress-preset-card-shadcn__icon" }, [
+      const card = el("div", { class: "compress-preset-card-pro" }, [
+        el("div", { class: "compress-preset-card-pro__head" }, [
+          el("div", { class: "compress-preset-card-pro__avatar" }, [
             el("span", { class: "material-symbols-outlined text-xs" }, ["folder_special"])
           ]),
-          el("span", { class: "compress-preset-card-shadcn__title" }, [p.name]),
-          el("div", { class: "row gap-2xs align-center", style: "margin-left: auto;" }, [configBtn, delBtn])
+          el("span", { class: "compress-preset-card-pro__title" }, [p.name]),
+          el("div", { class: "row gap-3xs align-center", style: "margin-left: auto; margin: 0;" }, [configBtn, delBtn])
         ]),
-        el("div", { class: "compress-preset-card-shadcn__body" }, [
-          el("span", { class: "compress-value-badge", style: "font-size: 10px; padding: 1px 5px;" }, [configTag]),
-          el("span", { class: "muted text-2xs" }, [`${assignedCount} file(s)`])
+        el("div", { class: "compress-preset-card-pro__body" }, [
+          el("span", { class: "compress-value-badge", style: "font-size: 10px; padding: 2px 6px; font-weight: 700;" }, [configTag]),
+          el("span", { class: "compress-preset-card-pro__count-chip" }, [`${assignedCount} file(s)`])
         ])
       ]);
 

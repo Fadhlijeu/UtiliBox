@@ -2255,6 +2255,90 @@ html[data-theme="light"] .home-hero {
   }
 }
 
+/* ── Pro Max Shadcn Modal & Preset Cards ── */
+.modal-card-pro {
+  background: var(--color-paper-base);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  width: 92%;
+  max-width: 460px;
+}
+
+.modal-header-pro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-title-pro {
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+}
+
+.compress-preset-card-pro {
+  padding: 10px 12px;
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  transition: all var(--duration-fast) var(--ease-standard);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compress-preset-card-pro:hover {
+  border-color: var(--color-accent-strong);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.15);
+}
+
+.compress-preset-card-pro__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compress-preset-card-pro__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(168, 85, 247, 0.25) 100%);
+  color: var(--color-accent-strong);
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.3);
+}
+
+.compress-preset-card-pro__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.compress-preset-card-pro__body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.compress-preset-card-pro__count-chip {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-ink-muted);
+  background: var(--color-paper-3);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
 
 
 
