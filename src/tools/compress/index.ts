@@ -916,14 +916,17 @@ const createPresetManager = (
         }
       });
 
-      const card = el("div", { class: "compress-preset-card", style: "padding: 8px 10px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-md);" }, [
-        el("div", { class: "row align-center justify-between gap-xs" }, [
-          el("span", { class: "font-bold text-xs" }, [p.name]),
-          el("div", { class: "row gap-xs align-center" }, [configBtn, delBtn])
+      const card = el("div", { class: "compress-preset-card-shadcn" }, [
+        el("div", { class: "compress-preset-card-shadcn__head" }, [
+          el("div", { class: "compress-preset-card-shadcn__icon" }, [
+            el("span", { class: "material-symbols-outlined text-xs" }, ["folder_special"])
+          ]),
+          el("span", { class: "compress-preset-card-shadcn__title" }, [p.name]),
+          el("div", { class: "row gap-2xs align-center", style: "margin-left: auto;" }, [configBtn, delBtn])
         ]),
-        el("div", { class: "row align-center justify-between text-2xs muted", style: "margin-top: 4px;" }, [
+        el("div", { class: "compress-preset-card-shadcn__body" }, [
           el("span", { class: "compress-value-badge", style: "font-size: 10px; padding: 1px 5px;" }, [configTag]),
-          el("span", {}, [`${assignedCount} file(s)`])
+          el("span", { class: "muted text-2xs" }, [`${assignedCount} file(s)`])
         ])
       ]);
 
@@ -1222,6 +1225,14 @@ const docCompressFeature: Feature = {
       dashboard
     );
 
+    const updateVisibility = () => {
+      const activeCount = entries.filter(isDoc).length;
+      rightPanel.style.display = activeCount > 0 ? "flex" : "none";
+      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
+    };
+
+    fileChangeListeners.push(updateVisibility);
+    updateVisibility();
     updateEstimate();
   }
 };
@@ -1445,6 +1456,14 @@ const imageCompressFeature: Feature = {
       dashboard
     );
 
+    const updateVisibility = () => {
+      const activeCount = entries.filter(isImg).length;
+      rightPanel.style.display = activeCount > 0 ? "flex" : "none";
+      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
+    };
+
+    fileChangeListeners.push(updateVisibility);
+    updateVisibility();
     updateEstimate();
   }
 };
@@ -1616,6 +1635,14 @@ const audioCompressFeature: Feature = {
       dashboard
     );
 
+    const updateVisibility = () => {
+      const activeCount = entries.filter(isAud).length;
+      rightPanel.style.display = activeCount > 0 ? "flex" : "none";
+      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
+    };
+
+    fileChangeListeners.push(updateVisibility);
+    updateVisibility();
     updateEstimate();
   }
 };
@@ -1791,6 +1818,14 @@ const videoCompressFeature: Feature = {
       dashboard
     );
 
+    const updateVisibility = () => {
+      const activeCount = entries.filter(isVid).length;
+      rightPanel.style.display = activeCount > 0 ? "flex" : "none";
+      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
+    };
+
+    fileChangeListeners.push(updateVisibility);
+    updateVisibility();
     updateEstimate();
   }
 };

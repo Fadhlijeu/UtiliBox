@@ -2167,6 +2167,52 @@ html[data-theme="light"] .home-hero {
   color: var(--color-ink);
 }
 
+/* ── Elevated Shadcn Preset Cards ── */
+.compress-preset-card-shadcn {
+  padding: var(--space-3);
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+
+.compress-preset-card-shadcn:hover {
+  border-color: var(--color-accent-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.compress-preset-card-shadcn__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 6px;
+}
+
+.compress-preset-card-shadcn__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-dim);
+  color: var(--color-accent-strong);
+}
+
+.compress-preset-card-shadcn__title {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.compress-preset-card-shadcn__body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 
 
 
