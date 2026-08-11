@@ -1209,26 +1209,37 @@ const docCompressFeature: Feature = {
       ])
     ]);
 
-    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
-    const rightPanel = el("div", { class: "compress-panel-right" }, [
-      presetManager.host,
+    const rightControls = el("div", { class: "compress-panel-right column gap-xs" }, [
       globalCard,
       compressBtn
     ]);
 
-    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
+    const topSection = el("div", { class: "compress-top-section column gap-xs" }, [
+      drop,
+      presetManager.host
+    ]);
+
+    const bottomGrid = el("div", { class: "compress-bottom-grid" }, [
+      fileListView.host,
+      rightControls
+    ]);
+
+    const dashboard = el("div", { class: "compress-hybrid-layout column gap-xs" }, [
+      topSection,
+      bottomGrid
+    ]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
-        "Smart document compressor preserving vector text clarity with single-column preset cards."
+        "Smart document compressor preserving vector text clarity with compact hybrid preset dashboard."
       ]),
       dashboard
     );
 
     const updateVisibility = () => {
       const activeCount = entries.filter(isDoc).length;
-      rightPanel.style.display = activeCount > 0 ? "flex" : "none";
-      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
+      presetManager.host.style.display = activeCount > 0 ? "block" : "none";
+      bottomGrid.style.display = activeCount > 0 ? "grid" : "none";
     };
 
     fileChangeListeners.push(updateVisibility);
@@ -1440,26 +1451,37 @@ const imageCompressFeature: Feature = {
       ])
     ]);
 
-    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
-    const rightPanel = el("div", { class: "compress-panel-right" }, [
-      presetManager.host,
+    const rightControls = el("div", { class: "compress-panel-right column gap-xs" }, [
       globalCard,
       compressBtn
     ]);
 
-    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
+    const topSection = el("div", { class: "compress-top-section column gap-xs" }, [
+      drop,
+      presetManager.host
+    ]);
+
+    const bottomGrid = el("div", { class: "compress-bottom-grid" }, [
+      fileListView.host,
+      rightControls
+    ]);
+
+    const dashboard = el("div", { class: "compress-hybrid-layout column gap-xs" }, [
+      topSection,
+      bottomGrid
+    ]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
-        "Compress images with WebP/AVIF local encoders, dimension scaling, and single-column preset cards."
+        "Compress images with WebP/AVIF local encoders, dimension scaling, and compact hybrid preset dashboard."
       ]),
       dashboard
     );
 
     const updateVisibility = () => {
       const activeCount = entries.filter(isImg).length;
-      rightPanel.style.display = activeCount > 0 ? "flex" : "none";
-      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
+      presetManager.host.style.display = activeCount > 0 ? "block" : "none";
+      bottomGrid.style.display = activeCount > 0 ? "grid" : "none";
     };
 
     fileChangeListeners.push(updateVisibility);
@@ -1619,26 +1641,37 @@ const audioCompressFeature: Feature = {
       ])
     ]);
 
-    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
-    const rightPanel = el("div", { class: "compress-panel-right" }, [
-      presetManager.host,
+    const rightControls = el("div", { class: "compress-panel-right column gap-xs" }, [
       globalCard,
       compressBtn
     ]);
 
-    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
+    const topSection = el("div", { class: "compress-top-section column gap-xs" }, [
+      drop,
+      presetManager.host
+    ]);
+
+    const bottomGrid = el("div", { class: "compress-bottom-grid" }, [
+      fileListView.host,
+      rightControls
+    ]);
+
+    const dashboard = el("div", { class: "compress-hybrid-layout column gap-xs" }, [
+      topSection,
+      bottomGrid
+    ]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
-        "Compress audio files with target bitrate selection and stereo to mono conversion."
+        "Compress audio files with target bitrate selection and compact hybrid preset dashboard."
       ]),
       dashboard
     );
 
     const updateVisibility = () => {
       const activeCount = entries.filter(isAud).length;
-      rightPanel.style.display = activeCount > 0 ? "flex" : "none";
-      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
+      presetManager.host.style.display = activeCount > 0 ? "block" : "none";
+      bottomGrid.style.display = activeCount > 0 ? "grid" : "none";
     };
 
     fileChangeListeners.push(updateVisibility);
@@ -1802,26 +1835,37 @@ const videoCompressFeature: Feature = {
       ])
     ]);
 
-    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
-    const rightPanel = el("div", { class: "compress-panel-right" }, [
-      presetManager.host,
+    const rightControls = el("div", { class: "compress-panel-right column gap-xs" }, [
       globalCard,
       compressBtn
     ]);
 
-    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
+    const topSection = el("div", { class: "compress-top-section column gap-xs" }, [
+      drop,
+      presetManager.host
+    ]);
+
+    const bottomGrid = el("div", { class: "compress-bottom-grid" }, [
+      fileListView.host,
+      rightControls
+    ]);
+
+    const dashboard = el("div", { class: "compress-hybrid-layout column gap-xs" }, [
+      topSection,
+      bottomGrid
+    ]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
-        "Compress video & animated GIF files with resolution scaling and single-column preset cards."
+        "Compress video & animated GIF files with resolution scaling and compact hybrid preset dashboard."
       ]),
       dashboard
     );
 
     const updateVisibility = () => {
       const activeCount = entries.filter(isVid).length;
-      rightPanel.style.display = activeCount > 0 ? "flex" : "none";
-      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
+      presetManager.host.style.display = activeCount > 0 ? "block" : "none";
+      bottomGrid.style.display = activeCount > 0 ? "grid" : "none";
     };
 
     fileChangeListeners.push(updateVisibility);
