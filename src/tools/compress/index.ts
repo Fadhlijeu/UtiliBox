@@ -1193,13 +1193,12 @@ const docCompressFeature: Feature = {
 
     const drop = dropzoneEl(ctx, "Upload documents (PDF, DOCX, XLSX, TXT)", ".pdf,.docx,.xlsx,.txt,.md,application/pdf");
 
-    const globalCard = el("div", { class: "compress-global-card", style: "padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 8px;" }, [
+    const leftControlsCard = el("div", { class: "compress-left-config-card", style: "padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 8px;" }, [
       el("div", { class: "row align-center gap-xs" }, [
-        el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["language"]),
+        el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["tune"]),
         el("span", { class: "font-bold text-xs" }, ["Global Compression Settings"]),
         el("span", { class: "muted text-2xs" }, ["(Applies to unassigned files)"])
       ]),
-      estimator.card,
       modeControl.container,
       sliderContainer,
       el("div", { class: "row gap-md align-center text-xs", style: "padding: 2px 0;" }, [
@@ -1209,37 +1208,39 @@ const docCompressFeature: Feature = {
       ])
     ]);
 
-    const rightControls = el("div", { class: "compress-panel-right column gap-xs" }, [
-      globalCard,
+    const rightControlsCard = el("div", { class: "compress-right-config-card", style: "display: flex; flex-direction: column; gap: 8px; justify-content: space-between;" }, [
+      estimator.card,
       compressBtn
     ]);
 
-    const topSection = el("div", { class: "compress-top-section column gap-xs" }, [
+    const configGrid = el("div", { class: "compress-config-grid-2col" }, [
+      leftControlsCard,
+      rightControlsCard
+    ]);
+
+    const topArea = el("div", { class: "compress-top-area column gap-xs" }, [
       drop,
+      fileListView.host,
       presetManager.host
     ]);
 
-    const bottomGrid = el("div", { class: "compress-bottom-grid" }, [
-      fileListView.host,
-      rightControls
-    ]);
-
-    const dashboard = el("div", { class: "compress-hybrid-layout column gap-xs" }, [
-      topSection,
-      bottomGrid
+    const dashboard = el("div", { class: "compress-option-b-layout column gap-xs" }, [
+      topArea,
+      configGrid
     ]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
-        "Smart document compressor preserving vector text clarity with compact hybrid preset dashboard."
+        "Smart document compressor preserving vector text clarity with extended full-width dropzone."
       ]),
       dashboard
     );
 
     const updateVisibility = () => {
       const activeCount = entries.filter(isDoc).length;
+      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
       presetManager.host.style.display = activeCount > 0 ? "block" : "none";
-      bottomGrid.style.display = activeCount > 0 ? "grid" : "none";
+      configGrid.style.display = activeCount > 0 ? "grid" : "none";
     };
 
     fileChangeListeners.push(updateVisibility);
@@ -1434,13 +1435,12 @@ const imageCompressFeature: Feature = {
 
     const drop = dropzoneEl(ctx, "Upload images (PNG, JPG, WEBP, AVIF)", "image/*,.png,.jpg,.jpeg,.webp,.avif,.bmp");
 
-    const globalCard = el("div", { class: "compress-global-card", style: "padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 8px;" }, [
+    const leftControlsCard = el("div", { class: "compress-left-config-card", style: "padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 8px;" }, [
       el("div", { class: "row align-center gap-xs" }, [
-        el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["language"]),
+        el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["tune"]),
         el("span", { class: "font-bold text-xs" }, ["Global Compression Settings"]),
         el("span", { class: "muted text-2xs" }, ["(Applies to unassigned files)"])
       ]),
-      estimator.card,
       modeControl.container,
       sliderContainer,
       el("div", { class: "row gap-md align-center text-xs", style: "padding: 2px 0;" }, [
@@ -1451,37 +1451,39 @@ const imageCompressFeature: Feature = {
       ])
     ]);
 
-    const rightControls = el("div", { class: "compress-panel-right column gap-xs" }, [
-      globalCard,
+    const rightControlsCard = el("div", { class: "compress-right-config-card", style: "display: flex; flex-direction: column; gap: 8px; justify-content: space-between;" }, [
+      estimator.card,
       compressBtn
     ]);
 
-    const topSection = el("div", { class: "compress-top-section column gap-xs" }, [
+    const configGrid = el("div", { class: "compress-config-grid-2col" }, [
+      leftControlsCard,
+      rightControlsCard
+    ]);
+
+    const topArea = el("div", { class: "compress-top-area column gap-xs" }, [
       drop,
+      fileListView.host,
       presetManager.host
     ]);
 
-    const bottomGrid = el("div", { class: "compress-bottom-grid" }, [
-      fileListView.host,
-      rightControls
-    ]);
-
-    const dashboard = el("div", { class: "compress-hybrid-layout column gap-xs" }, [
-      topSection,
-      bottomGrid
+    const dashboard = el("div", { class: "compress-option-b-layout column gap-xs" }, [
+      topArea,
+      configGrid
     ]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
-        "Compress images with WebP/AVIF local encoders, dimension scaling, and compact hybrid preset dashboard."
+        "Compress images with WebP/AVIF local encoders, dimension scaling, and extended full-width dropzone."
       ]),
       dashboard
     );
 
     const updateVisibility = () => {
       const activeCount = entries.filter(isImg).length;
+      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
       presetManager.host.style.display = activeCount > 0 ? "block" : "none";
-      bottomGrid.style.display = activeCount > 0 ? "grid" : "none";
+      configGrid.style.display = activeCount > 0 ? "grid" : "none";
     };
 
     fileChangeListeners.push(updateVisibility);
@@ -1625,13 +1627,12 @@ const audioCompressFeature: Feature = {
 
     const drop = dropzoneEl(ctx, "Upload audio files (MP3, WAV, OGG, M4A)", "audio/*,.mp3,.wav,.ogg,.m4a,.flac,.aac");
 
-    const globalCard = el("div", { class: "compress-global-card", style: "padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 8px;" }, [
+    const leftControlsCard = el("div", { class: "compress-left-config-card", style: "padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 8px;" }, [
       el("div", { class: "row align-center gap-xs" }, [
-        el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["language"]),
+        el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["tune"]),
         el("span", { class: "font-bold text-xs" }, ["Global Compression Settings"]),
         el("span", { class: "muted text-2xs" }, ["(Applies to unassigned files)"])
       ]),
-      estimator.card,
       modeControl.container,
       presetContainer,
       el("div", { class: "row gap-md align-center text-xs", style: "padding: 2px 0;" }, [
@@ -1641,37 +1642,39 @@ const audioCompressFeature: Feature = {
       ])
     ]);
 
-    const rightControls = el("div", { class: "compress-panel-right column gap-xs" }, [
-      globalCard,
+    const rightControlsCard = el("div", { class: "compress-right-config-card", style: "display: flex; flex-direction: column; gap: 8px; justify-content: space-between;" }, [
+      estimator.card,
       compressBtn
     ]);
 
-    const topSection = el("div", { class: "compress-top-section column gap-xs" }, [
+    const configGrid = el("div", { class: "compress-config-grid-2col" }, [
+      leftControlsCard,
+      rightControlsCard
+    ]);
+
+    const topArea = el("div", { class: "compress-top-area column gap-xs" }, [
       drop,
+      fileListView.host,
       presetManager.host
     ]);
 
-    const bottomGrid = el("div", { class: "compress-bottom-grid" }, [
-      fileListView.host,
-      rightControls
-    ]);
-
-    const dashboard = el("div", { class: "compress-hybrid-layout column gap-xs" }, [
-      topSection,
-      bottomGrid
+    const dashboard = el("div", { class: "compress-option-b-layout column gap-xs" }, [
+      topArea,
+      configGrid
     ]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
-        "Compress audio files with target bitrate selection and compact hybrid preset dashboard."
+        "Compress audio files with target bitrate selection and extended full-width dropzone."
       ]),
       dashboard
     );
 
     const updateVisibility = () => {
       const activeCount = entries.filter(isAud).length;
+      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
       presetManager.host.style.display = activeCount > 0 ? "block" : "none";
-      bottomGrid.style.display = activeCount > 0 ? "grid" : "none";
+      configGrid.style.display = activeCount > 0 ? "grid" : "none";
     };
 
     fileChangeListeners.push(updateVisibility);
@@ -1819,13 +1822,12 @@ const videoCompressFeature: Feature = {
 
     const drop = dropzoneEl(ctx, "Upload video files & GIF (MP4, WEBM, MOV, GIF)", "video/*,.mp4,.webm,.mov,.avi,.mkv,.gif,image/gif");
 
-    const globalCard = el("div", { class: "compress-global-card", style: "padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 8px;" }, [
+    const leftControlsCard = el("div", { class: "compress-left-config-card", style: "padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 8px;" }, [
       el("div", { class: "row align-center gap-xs" }, [
-        el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["language"]),
+        el("span", { class: "material-symbols-outlined text-xs text-accent" }, ["tune"]),
         el("span", { class: "font-bold text-xs" }, ["Global Compression Settings"]),
         el("span", { class: "muted text-2xs" }, ["(Applies to unassigned files)"])
       ]),
-      estimator.card,
       modeControl.container,
       presetContainer,
       el("div", { class: "row gap-md align-center text-xs", style: "padding: 2px 0;" }, [
@@ -1835,37 +1837,39 @@ const videoCompressFeature: Feature = {
       ])
     ]);
 
-    const rightControls = el("div", { class: "compress-panel-right column gap-xs" }, [
-      globalCard,
+    const rightControlsCard = el("div", { class: "compress-right-config-card", style: "display: flex; flex-direction: column; gap: 8px; justify-content: space-between;" }, [
+      estimator.card,
       compressBtn
     ]);
 
-    const topSection = el("div", { class: "compress-top-section column gap-xs" }, [
+    const configGrid = el("div", { class: "compress-config-grid-2col" }, [
+      leftControlsCard,
+      rightControlsCard
+    ]);
+
+    const topArea = el("div", { class: "compress-top-area column gap-xs" }, [
       drop,
+      fileListView.host,
       presetManager.host
     ]);
 
-    const bottomGrid = el("div", { class: "compress-bottom-grid" }, [
-      fileListView.host,
-      rightControls
-    ]);
-
-    const dashboard = el("div", { class: "compress-hybrid-layout column gap-xs" }, [
-      topSection,
-      bottomGrid
+    const dashboard = el("div", { class: "compress-option-b-layout column gap-xs" }, [
+      topArea,
+      configGrid
     ]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
-        "Compress video & animated GIF files with resolution scaling and compact hybrid preset dashboard."
+        "Compress video & animated GIF files with resolution scaling and extended full-width dropzone."
       ]),
       dashboard
     );
 
     const updateVisibility = () => {
       const activeCount = entries.filter(isVid).length;
+      fileListView.host.style.display = activeCount > 0 ? "block" : "none";
       presetManager.host.style.display = activeCount > 0 ? "block" : "none";
-      bottomGrid.style.display = activeCount > 0 ? "grid" : "none";
+      configGrid.style.display = activeCount > 0 ? "grid" : "none";
     };
 
     fileChangeListeners.push(updateVisibility);

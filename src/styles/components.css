@@ -2213,8 +2213,8 @@ html[data-theme="light"] .home-hero {
   gap: var(--space-2);
 }
 
-/* ── Hybrid Dashboard Layout ── */
-.compress-hybrid-layout {
+/* ── Option B Dashboard Layout ── */
+.compress-option-b-layout {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -2223,22 +2223,34 @@ html[data-theme="light"] .home-hero {
   margin: 0 auto;
 }
 
-.compress-top-section {
+.compress-top-area {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   width: 100%;
 }
 
-.compress-bottom-grid {
+.compress-config-grid-2col {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(320px, 1fr);
+  grid-template-columns: minmax(320px, 1.2fr) minmax(280px, 0.8fr);
   gap: var(--space-3);
-  align-items: start;
+  align-items: stretch;
+}
+
+.compress-left-config-card {
+  height: 100%;
+}
+
+.compress-right-config-card {
+  height: 100%;
+  padding: 12px;
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
 }
 
 @media (max-width: 768px) {
-  .compress-bottom-grid {
+  .compress-config-grid-2col {
     grid-template-columns: 1fr;
   }
 }
