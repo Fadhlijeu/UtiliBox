@@ -59,7 +59,7 @@ const addFiles = async (
       if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
         kind = "pdf";
       } else if (f.type === "image/gif" || /\.gif$/i.test(f.name)) {
-        kind = "video"; // Move GIF to Video tab as requested
+        kind = "video"; // GIF to Video tab
       } else if (f.type.startsWith("image/") || /\.(png|jpe?g|webp|avif|bmp)$/i.test(f.name)) {
         kind = "image";
       } else if (f.type.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|flac|aac)$/i.test(f.name)) {
@@ -159,14 +159,15 @@ const compressPdfCanvas = async (
   }
 };
 
-// ── Exact Target Size Match Engine (Guaranteed <= targetBytes) ──
-const compressPdfExactTarget = async (
+// ── Target Precision Match Engine (Exact vs Approx) ─────────────
+const compressPdfTargetMatch = async (
   pdfBytes: Uint8Array,
   targetBytes: number,
-  grayscaleVal: boolean
+  grayscaleVal: boolean,
+  precision: "exact" | "approx"
 ): Promise<Uint8Array> => {
   const structural = await compressPdfStructural(pdfBytes);
-  if (structural.length <= targetBytes) {
+  if (precision === "approx" && structural.length <= targetBytes) {
     return structural;
   }
 
@@ -183,7 +184,13 @@ const compressPdfExactTarget = async (
       const test = await compressPdfCanvas(pdfBytes, midQ, grayscaleVal, dpi);
       if (test.length <= targetBytes) {
         dpiBest = test;
-        lowQ = midQ + 1;
+        if (precision === "exact") {
+          // Exact Mode: Aim as high as possible to reach ~100% of target size
+          lowQ = midQ + 1;
+        } else {
+          // Approx Mode: Fits under target
+          lowQ = midQ + 2;
+        }
       } else {
         highQ = midQ - 1;
       }
@@ -191,14 +198,14 @@ const compressPdfExactTarget = async (
 
     if (dpiBest) {
       bestBytes = dpiBest;
-      break;
+      if (precision === "exact" && bestBytes.length >= targetBytes * 0.9) break;
     }
   }
 
   return bestBytes;
 };
 
-// ── Image Compression Helper (No Size Inflation Guarantee) ──────
+// ── Image Compression Helper ───────────────────────────────────
 const compressImageFile = async (
   file: File,
   targetMime: string,
@@ -380,24 +387,24 @@ const createEstimatorCard = (
   const estimatedBytes = Math.max(1024, Math.round(originalTotalBytes * (1 - reductionRatio)));
   const estimatedLabel = el("span", { class: "compress-stats-value" }, [formatBytes(estimatedBytes)]);
   const percentage = Math.round(reductionRatio * 100);
-  const badge = el("span", { class: "compress-stats-badge" }, [`-${percentage}% Reduction`]);
+  const badge = el("span", { class: "compress-stats-badge" }, [`-${percentage}%`]);
   const progressFill = el("div", { class: "compress-progress-fill", style: `width: ${Math.max(10, 100 - percentage)}%;` });
 
-  const card = el("div", { class: "compress-stats-card" }, [
+  const card = el("div", { class: "compress-stats-card", style: "padding: 8px 10px; gap: 4px;" }, [
     el("div", { class: "compress-stats-head" }, [
-      el("span", { class: "compress-stats-title" }, [
+      el("span", { class: "compress-stats-title", style: "font-size: 10px;" }, [
         el("span", { class: "material-symbols-outlined text-xs" }, ["analytics"]),
-        "Live Estimated Output"
+        "Estimated Output"
       ]),
       badge
     ]),
-    el("div", { class: "row gap-md align-center" }, [
-      el("span", { class: "muted text-xs" }, ["Original:"]),
+    el("div", { class: "row gap-md align-center text-xs" }, [
+      el("span", { class: "muted" }, ["Original:"]),
       originalLabel,
-      el("span", { class: "muted text-xs" }, ["➔ Estimated:"]),
+      el("span", { class: "muted" }, ["➔ Est:"]),
       estimatedLabel
     ]),
-    el("div", { class: "compress-progress-track" }, [progressFill])
+    el("div", { class: "compress-progress-track", style: "height: 4px;" }, [progressFill])
   ]);
 
   const update = (bytes: number, ratio: number) => {
@@ -405,7 +412,7 @@ const createEstimatorCard = (
     const est = Math.max(1024, Math.round(bytes * (1 - ratio)));
     estimatedLabel.textContent = formatBytes(est);
     const pct = Math.min(95, Math.max(0, Math.round(ratio * 100)));
-    badge.textContent = `-${pct}% Reduction`;
+    badge.textContent = `-${pct}%`;
     progressFill.style.width = `${Math.max(10, 100 - pct)}%`;
   };
 
@@ -413,8 +420,9 @@ const createEstimatorCard = (
 };
 
 export type CompressMode = "quality" | "target-size";
+export type TargetPrecision = "exact" | "approx";
 
-// ── Component: Compact Google Material Mode Switcher ───────────
+// ── Component: Compact Google Material Mode Switcher & Precision
 const createModeControl = (
   _uniqueId: string,
   onModeChange: (mode: CompressMode) => void
@@ -422,19 +430,43 @@ const createModeControl = (
   container: HTMLElement;
   getMode: () => CompressMode;
   getTargetBytes: () => number | null;
+  getTargetPrecision: () => TargetPrecision;
   setDisabledState: (elementsToDisable: HTMLElement[]) => void;
 } => {
   let activeMode: CompressMode = "quality";
+  let activePrecision: TargetPrecision = "exact";
 
   const pillQuality = el("div", { class: "compress-mode-pill compress-mode-pill--active" }, [
     el("span", { class: "material-symbols-outlined text-xs" }, ["tune"]),
-    "Quality Slider & Presets"
+    "Quality Slider"
   ]);
 
   const pillTarget = el("div", { class: "compress-mode-pill" }, [
     el("span", { class: "material-symbols-outlined text-xs" }, ["track_changes"]),
-    "Target Max Size"
+    "Target Size"
   ]);
+
+  const pillExact = el("div", { class: "compress-precision-pill compress-precision-pill--active" }, ["Exact Match"]);
+  const pillApprox = el("div", { class: "compress-precision-pill" }, ["Approx (Max)"]);
+
+  const precisionToggle = el("div", { class: "compress-precision-toggle", style: "opacity: 0.35; pointer-events: none;" }, [
+    pillExact,
+    pillApprox
+  ]);
+
+  pillExact.addEventListener("click", () => {
+    activePrecision = "exact";
+    pillExact.classList.add("compress-precision-pill--active");
+    pillApprox.classList.remove("compress-precision-pill--active");
+    onModeChange("target-size");
+  });
+
+  pillApprox.addEventListener("click", () => {
+    activePrecision = "approx";
+    pillApprox.classList.add("compress-precision-pill--active");
+    pillExact.classList.remove("compress-precision-pill--active");
+    onModeChange("target-size");
+  });
 
   const numInput = el("input", {
     type: "number",
@@ -442,16 +474,16 @@ const createModeControl = (
     step: "0.1",
     value: "1.0",
     class: "input",
-    style: "width: 65px; font-weight: 700; border: none; background: transparent; outline: none; padding: 0 4px; font-size: 12px;",
+    style: "width: 55px; font-weight: 700; border: none; background: transparent; outline: none; padding: 0 2px; font-size: 11px;",
     disabled: "disabled"
   }) as HTMLInputElement;
 
-  const unitSelect = el("select", { class: "select", disabled: "disabled", style: "border: none; background: transparent; font-weight: 700; outline: none; padding: 0 2px; font-size: 11px;" }, [
+  const unitSelect = el("select", { class: "select", disabled: "disabled", style: "border: none; background: transparent; font-weight: 700; outline: none; padding: 0 2px; font-size: 10px;" }, [
     el("option", { value: "MB" }, ["MB"]),
     el("option", { value: "KB" }, ["KB"])
   ]) as HTMLSelectElement;
 
-  const targetInputGroup = el("div", { class: "compress-target-input-group", style: "opacity: 0.35; pointer-events: none;" }, [
+  const targetInputGroup = el("div", { class: "compress-target-input-group", style: "opacity: 0.35; pointer-events: none; height: 26px;" }, [
     el("span", { class: "material-symbols-outlined muted text-xs" }, ["straighten"]),
     numInput,
     unitSelect
@@ -479,6 +511,9 @@ const createModeControl = (
     unitSelect.disabled = !isTarget;
     targetInputGroup.style.opacity = isTarget ? "1" : "0.35";
     targetInputGroup.style.pointerEvents = isTarget ? "auto" : "none";
+
+    precisionToggle.style.opacity = isTarget ? "1" : "0.35";
+    precisionToggle.style.pointerEvents = isTarget ? "auto" : "none";
   };
 
   pillQuality.addEventListener("click", () => {
@@ -508,11 +543,8 @@ const createModeControl = (
 
   const container = el("div", { class: "compress-mode-card" }, [
     el("div", { class: "compress-mode-toggle-group" }, [pillQuality, pillTarget]),
-    el("div", { class: "row align-center justify-between", style: "padding: 2px 4px;" }, [
-      el("span", { class: "muted text-xs row gap-xs align-center" }, [
-        el("span", { class: "material-symbols-outlined text-xs" }, ["speed"]),
-        "Target Limit:"
-      ]),
+    el("div", { class: "row align-center justify-between gap-xs", style: "padding: 2px 0;" }, [
+      precisionToggle,
       targetInputGroup
     ])
   ]);
@@ -525,12 +557,14 @@ const createModeControl = (
     return unitSelect.value === "MB" ? Math.round(val * 1024 * 1024) : Math.round(val * 1024);
   };
 
+  const getTargetPrecision = (): TargetPrecision => activePrecision;
+
   const setDisabledState = (elements: HTMLElement[]) => {
     qualityElements = elements;
     updateState(activeMode);
   };
 
-  return { container, getMode, getTargetBytes, setDisabledState };
+  return { container, getMode, getTargetBytes, getTargetPrecision, setDisabledState };
 };
 
 // ── Component: File List View ──────────────────────────────────
@@ -544,16 +578,16 @@ const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: 
 
     const list = el(
       "ul",
-      { class: "file-list" },
+      { class: "file-list", style: "max-height: 180px; overflow-y: auto;" },
       filtered.map((e) => {
         const origIndex = entries.indexOf(e);
         const iconName = e.kind === "pdf" ? "picture_as_pdf" : e.kind === "image" ? "image" : e.kind === "audio" ? "graphic_eq" : e.kind === "video" ? "movie" : "description";
         const removeBtn = el("button", { class: "btn btn--xs btn--ghost", type: "button", title: "Remove file" }, ["✕"]);
         removeBtn.addEventListener("click", () => removeEntry(origIndex));
 
-        return el("li", { class: "file-item" }, [
-          el("span", { class: "material-symbols-outlined" }, [iconName]),
-          el("span", { class: "file-name", title: e.file.name }, [e.file.name]),
+        return el("li", { class: "file-item", style: "padding: 4px 8px;" }, [
+          el("span", { class: "material-symbols-outlined text-xs" }, [iconName]),
+          el("span", { class: "file-name text-xs", title: e.file.name }, [e.file.name]),
           el("span", { class: "muted text-xs" }, [formatBytes(e.file.size)]),
           removeBtn
         ]);
@@ -565,7 +599,7 @@ const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: 
   return { host, render };
 };
 
-// ── Feature 1: Document Compressor ─────────────────────────────
+// ── Feature 1: Document Compressor (Compact Dashboard Layout) ──
 const docCompressFeature: Feature = {
   id: "doc-compress",
   label: "Compress Document",
@@ -589,8 +623,8 @@ const docCompressFeature: Feature = {
       "65% Quality"
     ]);
 
-    const dpiSelect = el("select", { class: "select", style: "font-size: 11px; padding: 2px 6px;" }, [
-      el("option", { value: "150" }, ["150 DPI (Recommended / Crisp Text)"]),
+    const dpiSelect = el("select", { class: "select", style: "font-size: 11px; padding: 2px 4px;" }, [
+      el("option", { value: "150" }, ["150 DPI (Crisp Text Vector)"]),
       el("option", { value: "72" }, ["72 DPI (Web Compact)"]),
       el("option", { value: "300" }, ["300 DPI (High Print Quality)"])
     ]) as HTMLSelectElement;
@@ -614,7 +648,7 @@ const docCompressFeature: Feature = {
         qualityBadge
       ]),
       qualitySlider,
-      el("div", { class: "compress-presets-grid", style: "margin-top: 6px; grid-template-columns: repeat(3, 1fr);" }, [
+      el("div", { class: "compress-presets-grid", style: "margin-top: 4px; grid-template-columns: repeat(3, 1fr);" }, [
         presetBtn("40%", "Hard", () => {
           qualitySlider.value = "40";
           qualityVal = 40;
@@ -664,7 +698,7 @@ const docCompressFeature: Feature = {
       updateEstimate();
     });
 
-    const compressBtn = el("button", { class: "btn btn--primary", type: "button" }, [
+    const compressBtn = el("button", { class: "btn btn--primary", type: "button", style: "width: 100%; justify-content: center;" }, [
       el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["compress"]),
       "Compress Document(s)"
     ]) as HTMLButtonElement;
@@ -677,6 +711,7 @@ const docCompressFeature: Feature = {
       try {
         const outFiles = [];
         const targetLimit = modeControl.getTargetBytes();
+        const precision = modeControl.getTargetPrecision();
 
         for (let i = 0; i < activeDocs.length; i++) {
           const entry = activeDocs[i];
@@ -686,7 +721,7 @@ const docCompressFeature: Feature = {
 
           if (entry.kind === "pdf") {
             if (targetLimit && modeControl.getMode() === "target-size") {
-              const exactBytes = await compressPdfExactTarget(entry.data, targetLimit, grayscaleVal);
+              const exactBytes = await compressPdfTargetMatch(entry.data, targetLimit, grayscaleVal, precision);
               outBlob = blobFromBytes(exactBytes, "application/pdf");
             } else {
               const compressedBytes = await compressPdfCanvas(entry.data, qualityVal, grayscaleVal, Number(dpiSelect.value));
@@ -727,23 +762,29 @@ const docCompressFeature: Feature = {
       }
     });
 
-    const drop = dropzoneEl(ctx, "Upload documents (PDF, DOCX, XLSX, TXT, MD)", ".pdf,.docx,.xlsx,.txt,.md,application/pdf");
+    const drop = dropzoneEl(ctx, "Upload documents (PDF, DOCX, XLSX, TXT)", ".pdf,.docx,.xlsx,.txt,.md,application/pdf");
 
-    host.append(
-      el("p", { class: "tool-desc text-xs" }, [
-        "Smart dual-engine document compressor preserving vector text clarity with exact target size precision."
-      ]),
-      drop,
-      fileListView.host,
+    // Compact Split-Dashboard Grid
+    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
+    const rightPanel = el("div", { class: "compress-panel-right" }, [
       estimator.card,
       modeControl.container,
       sliderContainer,
-      el("div", { class: "row gap-md align-center text-xs" }, [
-        el("label", { class: "field-label" }, ["Target DPI:"]),
+      el("div", { class: "row gap-md align-center text-xs", style: "padding: 2px 0;" }, [
+        el("label", { class: "field-label text-xs" }, ["DPI:"]),
         dpiSelect,
-        el("label", { class: "row gap-xs" }, [grayscaleCheck, "Grayscale (B&W)"])
+        el("label", { class: "row gap-xs text-xs" }, [grayscaleCheck, "Grayscale"])
       ]),
-      el("div", { class: "row", style: "margin-top: 10px;" }, [compressBtn])
+      compressBtn
+    ]);
+
+    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
+
+    host.append(
+      el("p", { class: "tool-desc text-xs" }, [
+        "Smart document compressor preserving vector text clarity with exact target precision."
+      ]),
+      dashboard
     );
 
     fileListView.render();
@@ -751,15 +792,15 @@ const docCompressFeature: Feature = {
 };
 
 const presetBtn = (title: string, desc: string, onClick: () => void): HTMLElement => {
-  const btn = el("button", { class: "compress-preset-btn", type: "button", style: "padding: 4px 6px;" }, [
-    el("span", { class: "compress-preset-btn__title", style: "font-size: 11px;" }, [title]),
-    el("span", { class: "compress-preset-btn__desc", style: "font-size: 9px;" }, [desc])
+  const btn = el("button", { class: "compress-preset-btn", type: "button", style: "padding: 3px 4px;" }, [
+    el("span", { class: "compress-preset-btn__title", style: "font-size: 10px;" }, [title]),
+    el("span", { class: "compress-preset-btn__desc", style: "font-size: 8px;" }, [desc])
   ]);
   btn.addEventListener("click", onClick);
   return btn;
 };
 
-// ── Feature 2: Image Compressor ────────────────────────────────
+// ── Feature 2: Image Compressor (Compact Dashboard Layout) ─────
 const imageCompressFeature: Feature = {
   id: "image-compress",
   label: "Compress Image",
@@ -784,18 +825,18 @@ const imageCompressFeature: Feature = {
       "75% Quality"
     ]);
 
-    const scaleSelect = el("select", { class: "select", style: "font-size: 11px; padding: 2px 6px;" }, [
-      el("option", { value: "1.0" }, ["Original Dimensions (100%)"]),
+    const scaleSelect = el("select", { class: "select", style: "font-size: 11px; padding: 2px 4px;" }, [
+      el("option", { value: "1.0" }, ["Original (100%)"]),
       el("option", { value: "0.75" }, ["Scale 75%"]),
       el("option", { value: "0.5" }, ["Scale 50%"]),
       el("option", { value: "0.25" }, ["Scale 25%"])
     ]) as HTMLSelectElement;
 
-    const formatSelect = el("select", { class: "select", style: "font-size: 11px; padding: 2px 6px;" }, [
-      el("option", { value: "image/webp" }, ["WebP (Best Compression)"]),
+    const formatSelect = el("select", { class: "select", style: "font-size: 11px; padding: 2px 4px;" }, [
+      el("option", { value: "image/webp" }, ["WebP"]),
       el("option", { value: "image/jpeg" }, ["JPG"]),
       el("option", { value: "image/png" }, ["PNG"]),
-      el("option", { value: "" }, ["Keep Original Format"])
+      el("option", { value: "" }, ["Original Format"])
     ]) as HTMLSelectElement;
 
     const imgs = entries.filter(isImg);
@@ -815,7 +856,7 @@ const imageCompressFeature: Feature = {
         qualityBadge
       ]),
       qualitySlider,
-      el("div", { class: "compress-presets-grid", style: "margin-top: 6px; grid-template-columns: repeat(3, 1fr);" }, [
+      el("div", { class: "compress-presets-grid", style: "margin-top: 4px; grid-template-columns: repeat(3, 1fr);" }, [
         presetBtn("40%", "Hard", () => {
           qualitySlider.value = "40";
           qualityVal = 0.4;
@@ -869,7 +910,7 @@ const imageCompressFeature: Feature = {
       updateEstimate();
     });
 
-    const compressBtn = el("button", { class: "btn btn--primary", type: "button" }, [
+    const compressBtn = el("button", { class: "btn btn--primary", type: "button", style: "width: 100%; justify-content: center;" }, [
       el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["image"]),
       "Compress Image(s)"
     ]) as HTMLButtonElement;
@@ -882,6 +923,7 @@ const imageCompressFeature: Feature = {
       try {
         const outFiles = [];
         const targetLimit = modeControl.getTargetBytes();
+        const precision = modeControl.getTargetPrecision();
 
         for (let i = 0; i < activeImages.length; i++) {
           const imgEntry = activeImages[i];
@@ -889,7 +931,6 @@ const imageCompressFeature: Feature = {
           
           let res = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, qualityVal, scaleRatio);
 
-          // Enforce Ceiling Rule: Output size must NEVER exceed input size or targetLimit
           if (targetLimit && modeControl.getMode() === "target-size") {
             let bestRes = res;
             let curScale = scaleRatio;
@@ -900,16 +941,19 @@ const imageCompressFeature: Feature = {
               while (low <= high) {
                 const mid = (low + high) / 2;
                 const testRes = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, mid, curScale);
-                // Strict check: Must be <= targetLimit AND <= imgEntry.file.size
                 if (testRes.blob.size <= targetLimit && testRes.blob.size <= imgEntry.file.size) {
                   bestRes = testRes;
-                  low = mid + 0.02;
+                  if (precision === "exact") {
+                    low = mid + 0.02; // Push quality to land close to target size!
+                  } else {
+                    low = mid + 0.05;
+                  }
                 } else {
                   high = mid - 0.02;
                 }
               }
               if (bestRes.blob.size <= targetLimit && bestRes.blob.size <= imgEntry.file.size) break;
-              curScale *= 0.85; // Step down scale if quality reduction alone was insufficient
+              curScale *= 0.85;
             }
 
             if (bestRes.blob.size > imgEntry.file.size && imgEntry.file.size <= targetLimit) {
@@ -918,7 +962,6 @@ const imageCompressFeature: Feature = {
               res = bestRes;
             }
           } else {
-            // Slider / Preset Mode: Never return an inflated image file
             if (res.blob.size > imgEntry.file.size) {
               const fallback = await compressImageFile(imgEntry.file, "image/jpeg", 0.65, 0.9);
               if (fallback.blob.size < imgEntry.file.size) res = fallback;
@@ -957,29 +1000,34 @@ const imageCompressFeature: Feature = {
 
     const drop = dropzoneEl(ctx, "Upload images (JPG, PNG, WebP, AVIF)", "image/*,.jpg,.jpeg,.png,.webp,.avif,.bmp");
 
+    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
+    const rightPanel = el("div", { class: "compress-panel-right" }, [
+      estimator.card,
+      modeControl.container,
+      sliderContainer,
+      el("div", { class: "row gap-md align-center text-xs", style: "padding: 2px 0;" }, [
+        el("label", { class: "field-label text-xs" }, ["Format:"]),
+        formatSelect,
+        el("label", { class: "field-label text-xs" }, ["Scale:"]),
+        scaleSelect
+      ]),
+      compressBtn
+    ]);
+
+    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
+
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
         "Compress images with WebP/AVIF local encoders, dimension scaling, and precision target size limits."
       ]),
-      drop,
-      fileListView.host,
-      estimator.card,
-      modeControl.container,
-      sliderContainer,
-      el("div", { class: "row gap-md align-center text-xs" }, [
-        el("label", { class: "field-label" }, ["Target Format:"]),
-        formatSelect,
-        el("label", { class: "field-label" }, ["Dimension Scale:"]),
-        scaleSelect
-      ]),
-      el("div", { class: "row", style: "margin-top: 10px;" }, [compressBtn])
+      dashboard
     );
 
     fileListView.render();
   }
 };
 
-// ── Feature 3: Audio Compressor ────────────────────────────────
+// ── Feature 3: Audio Compressor (Compact Dashboard Layout) ──────
 const audioCompressFeature: Feature = {
   id: "audio-compress",
   label: "Compress Audio",
@@ -990,7 +1038,7 @@ const audioCompressFeature: Feature = {
     const isAud = (e: CompressEntry) => e.kind === "audio" || e.mime.startsWith("audio/");
     const fileListView = createFileListView(isAud);
 
-    const bitrateSelect = el("select", { class: "select", style: "font-size: 11px; padding: 2px 6px;" }, [
+    const bitrateSelect = el("select", { class: "select", style: "font-size: 11px; padding: 2px 4px;" }, [
       el("option", { value: "128" }, ["128 kbps (Standard MP3 Quality)"]),
       el("option", { value: "192" }, ["192 kbps (High Quality)"]),
       el("option", { value: "96" }, ["96 kbps (Medium Quality / Speech)"]),
@@ -1012,7 +1060,7 @@ const audioCompressFeature: Feature = {
         el("span", { class: "material-symbols-outlined text-xs" }, ["sliders"]),
         "Bitrate Presets:"
       ]),
-      el("div", { class: "compress-presets-grid", style: "margin-top: 6px; grid-template-columns: repeat(3, 1fr);" }, [
+      el("div", { class: "compress-presets-grid", style: "margin-top: 4px; grid-template-columns: repeat(3, 1fr);" }, [
         presetBtn("64 kbps", "Voice", () => {
           bitrateSelect.value = "64";
           bitrateKbps = 64;
@@ -1057,7 +1105,7 @@ const audioCompressFeature: Feature = {
       updateEstimate();
     });
 
-    const compressBtn = el("button", { class: "btn btn--primary", type: "button" }, [
+    const compressBtn = el("button", { class: "btn btn--primary", type: "button", style: "width: 100%; justify-content: center;" }, [
       el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["graphic_eq"]),
       "Compress Audio(s)"
     ]) as HTMLButtonElement;
@@ -1103,30 +1151,35 @@ const audioCompressFeature: Feature = {
       }
     });
 
-    const drop = dropzoneEl(ctx, "Upload audio files (MP3, WAV, OGG, M4A, FLAC)", "audio/*,.mp3,.wav,.ogg,.m4a,.flac,.aac");
+    const drop = dropzoneEl(ctx, "Upload audio files (MP3, WAV, OGG, M4A)", "audio/*,.mp3,.wav,.ogg,.m4a,.flac,.aac");
+
+    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
+    const rightPanel = el("div", { class: "compress-panel-right" }, [
+      estimator.card,
+      modeControl.container,
+      presetContainer,
+      el("div", { class: "row gap-md align-center text-xs", style: "padding: 2px 0;" }, [
+        el("label", { class: "field-label text-xs" }, ["Bitrate:"]),
+        bitrateSelect,
+        el("label", { class: "row gap-xs text-xs" }, [monoCheck, "Stereo ➔ Mono"])
+      ]),
+      compressBtn
+    ]);
+
+    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
         "Compress audio files with target bitrate selection and stereo to mono conversion."
       ]),
-      drop,
-      fileListView.host,
-      estimator.card,
-      modeControl.container,
-      presetContainer,
-      el("div", { class: "row gap-md align-center text-xs" }, [
-        el("label", { class: "field-label" }, ["Target Bitrate:"]),
-        bitrateSelect,
-        el("label", { class: "row gap-xs" }, [monoCheck, "Convert Stereo to Mono (Save ~50%)"])
-      ]),
-      el("div", { class: "row", style: "margin-top: 10px;" }, [compressBtn])
+      dashboard
     );
 
     fileListView.render();
   }
 };
 
-// ── Feature 4: Video Compressor (Includes Animated GIF) ───────
+// ── Feature 4: Video Compressor (Compact Dashboard Layout) ─────
 const videoCompressFeature: Feature = {
   id: "video-compress",
   label: "Compress Video / GIF",
@@ -1159,7 +1212,7 @@ const videoCompressFeature: Feature = {
         el("span", { class: "material-symbols-outlined text-xs" }, ["sliders"]),
         "Resolution Presets:"
       ]),
-      el("div", { class: "compress-presets-grid", style: "margin-top: 6px; grid-template-columns: repeat(3, 1fr);" }, [
+      el("div", { class: "compress-presets-grid", style: "margin-top: 4px; grid-template-columns: repeat(3, 1fr);" }, [
         presetBtn("480p", "SD", () => {
           resSelect.value = "480";
           resHeight = 480;
@@ -1204,7 +1257,7 @@ const videoCompressFeature: Feature = {
       updateEstimate();
     });
 
-    const compressBtn = el("button", { class: "btn btn--primary", type: "button" }, [
+    const compressBtn = el("button", { class: "btn btn--primary", type: "button", style: "width: 100%; justify-content: center;" }, [
       el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["movie"]),
       "Compress Video / GIF(s)"
     ]) as HTMLButtonElement;
@@ -1250,23 +1303,28 @@ const videoCompressFeature: Feature = {
       }
     });
 
-    const drop = dropzoneEl(ctx, "Upload video files & GIF (MP4, WEBM, MOV, AVI, GIF)", "video/*,.mp4,.webm,.mov,.avi,.mkv,.gif,image/gif");
+    const drop = dropzoneEl(ctx, "Upload video files & GIF (MP4, WEBM, MOV, GIF)", "video/*,.mp4,.webm,.mov,.avi,.mkv,.gif,image/gif");
 
-    host.append(
-      el("p", { class: "tool-desc text-xs" }, [
-        "Compress video & animated GIF files with resolution scaling, frame rate capping, and mute audio options."
-      ]),
-      drop,
-      fileListView.host,
+    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
+    const rightPanel = el("div", { class: "compress-panel-right" }, [
       estimator.card,
       modeControl.container,
       presetContainer,
-      el("div", { class: "row gap-md align-center text-xs" }, [
-        el("label", { class: "field-label" }, ["Target Resolution:"]),
+      el("div", { class: "row gap-md align-center text-xs", style: "padding: 2px 0;" }, [
+        el("label", { class: "field-label text-xs" }, ["Resolution:"]),
         resSelect,
-        el("label", { class: "row gap-xs" }, [muteCheck, "Mute Audio Track (Save ~20%)"])
+        el("label", { class: "row gap-xs text-xs" }, [muteCheck, "Mute Audio Track"])
       ]),
-      el("div", { class: "row", style: "margin-top: 10px;" }, [compressBtn])
+      compressBtn
+    ]);
+
+    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
+
+    host.append(
+      el("p", { class: "tool-desc text-xs" }, [
+        "Compress video & animated GIF files with resolution scaling and mute options."
+      ]),
+      dashboard
     );
 
     fileListView.render();

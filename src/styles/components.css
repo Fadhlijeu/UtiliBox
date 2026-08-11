@@ -1725,4 +1725,55 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   border-color: var(--color-accent-strong);
 }
 
+/* Compact Split-Dashboard Layout */
+.compress-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.2fr);
+  gap: var(--space-3);
+  align-items: start;
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 768px) {
+  .compress-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.compress-panel-left,
+.compress-panel-right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.compress-precision-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--color-paper-3);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.compress-precision-pill {
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 3px;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--duration-fast);
+}
+
+.compress-precision-pill--active {
+  background: var(--color-paper-1);
+  color: var(--color-accent-strong);
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+
 
