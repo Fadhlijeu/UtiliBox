@@ -58,7 +58,9 @@ const addFiles = async (
       let kind: "pdf" | "image" | "audio" | "video" | "doc" = "doc";
       if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) {
         kind = "pdf";
-      } else if (f.type.startsWith("image/") || /\.(png|jpe?g|webp|avif|gif|bmp)$/i.test(f.name)) {
+      } else if (f.type === "image/gif" || /\.gif$/i.test(f.name)) {
+        kind = "video"; // Move GIF to Video tab as requested
+      } else if (f.type.startsWith("image/") || /\.(png|jpe?g|webp|avif|bmp)$/i.test(f.name)) {
         kind = "image";
       } else if (f.type.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|flac|aac)$/i.test(f.name)) {
         kind = "audio";
@@ -163,13 +165,11 @@ const compressPdfExactTarget = async (
   targetBytes: number,
   grayscaleVal: boolean
 ): Promise<Uint8Array> => {
-  // Pass 1: Try structural vector optimization first
   const structural = await compressPdfStructural(pdfBytes);
   if (structural.length <= targetBytes) {
     return structural;
   }
 
-  // Pass 2: Binary Search across DPI scales (150 -> 120 -> 96 -> 72) and fine Quality % (1 to 100)
   const dpiOptions = [150, 120, 96, 72];
   let bestBytes = structural;
 
@@ -183,22 +183,22 @@ const compressPdfExactTarget = async (
       const test = await compressPdfCanvas(pdfBytes, midQ, grayscaleVal, dpi);
       if (test.length <= targetBytes) {
         dpiBest = test;
-        lowQ = midQ + 1; // Fit under target! Try higher quality to get even closer to targetBytes!
+        lowQ = midQ + 1;
       } else {
-        highQ = midQ - 1; // Exceeded targetBytes, step down quality
+        highQ = midQ - 1;
       }
     }
 
     if (dpiBest) {
       bestBytes = dpiBest;
-      break; // Found highest resolution & quality combination fitting strictly <= targetBytes!
+      break;
     }
   }
 
   return bestBytes;
 };
 
-// ── Image Compression Helper ───────────────────────────────────
+// ── Image Compression Helper (No Size Inflation Guarantee) ──────
 const compressImageFile = async (
   file: File,
   targetMime: string,
@@ -428,7 +428,7 @@ const createModeControl = (
 
   const pillQuality = el("div", { class: "compress-mode-pill compress-mode-pill--active" }, [
     el("span", { class: "material-symbols-outlined text-xs" }, ["tune"]),
-    "Quality Slider"
+    "Quality Slider & Presets"
   ]);
 
   const pillTarget = el("div", { class: "compress-mode-pill" }, [
@@ -465,7 +465,6 @@ const createModeControl = (
     pillQuality.classList.toggle("compress-mode-pill--active", !isTarget);
     pillTarget.classList.toggle("compress-mode-pill--active", isTarget);
 
-    // Disable all inputs, selects, and buttons inside qualityElements
     qualityElements.forEach((elItem) => {
       const controls = elItem.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>("input, select, button");
       controls.forEach((ctrl) => {
@@ -769,7 +768,7 @@ const imageCompressFeature: Feature = {
     let scaleRatio = 1.0;
     let targetMime = "image/webp";
 
-    const isImg = (e: CompressEntry) => e.kind === "image" || e.mime.startsWith("image/");
+    const isImg = (e: CompressEntry) => e.kind === "image" || (e.mime.startsWith("image/") && e.mime !== "image/gif");
     const fileListView = createFileListView(isImg);
 
     const qualitySlider = el("input", {
@@ -890,21 +889,40 @@ const imageCompressFeature: Feature = {
           
           let res = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, qualityVal, scaleRatio);
 
+          // Enforce Ceiling Rule: Output size must NEVER exceed input size or targetLimit
           if (targetLimit && modeControl.getMode() === "target-size") {
-            let low = 0.01;
-            let high = 1.0;
             let bestRes = res;
-            while (low <= high) {
-              const mid = (low + high) / 2;
-              const testRes = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, mid, scaleRatio);
-              if (testRes.blob.size <= targetLimit) {
-                bestRes = testRes;
-                low = mid + 0.01;
-              } else {
-                high = mid - 0.01;
+            let curScale = scaleRatio;
+
+            for (let scaleIter = 0; scaleIter < 4; scaleIter++) {
+              let low = 0.01;
+              let high = 1.0;
+              while (low <= high) {
+                const mid = (low + high) / 2;
+                const testRes = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, mid, curScale);
+                // Strict check: Must be <= targetLimit AND <= imgEntry.file.size
+                if (testRes.blob.size <= targetLimit && testRes.blob.size <= imgEntry.file.size) {
+                  bestRes = testRes;
+                  low = mid + 0.02;
+                } else {
+                  high = mid - 0.02;
+                }
               }
+              if (bestRes.blob.size <= targetLimit && bestRes.blob.size <= imgEntry.file.size) break;
+              curScale *= 0.85; // Step down scale if quality reduction alone was insufficient
             }
-            res = bestRes;
+
+            if (bestRes.blob.size > imgEntry.file.size && imgEntry.file.size <= targetLimit) {
+              res = { blob: imgEntry.file, mime: imgEntry.mime };
+            } else {
+              res = bestRes;
+            }
+          } else {
+            // Slider / Preset Mode: Never return an inflated image file
+            if (res.blob.size > imgEntry.file.size) {
+              const fallback = await compressImageFile(imgEntry.file, "image/jpeg", 0.65, 0.9);
+              if (fallback.blob.size < imgEntry.file.size) res = fallback;
+            }
           }
 
           const reduction = Math.round((1 - res.blob.size / imgEntry.file.size) * 100);
@@ -937,7 +955,7 @@ const imageCompressFeature: Feature = {
       }
     });
 
-    const drop = dropzoneEl(ctx, "Upload images (JPG, PNG, WebP, AVIF, GIF)", "image/*,.jpg,.jpeg,.png,.webp,.avif,.gif,.bmp");
+    const drop = dropzoneEl(ctx, "Upload images (JPG, PNG, WebP, AVIF)", "image/*,.jpg,.jpeg,.png,.webp,.avif,.bmp");
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
@@ -989,7 +1007,31 @@ const audioCompressFeature: Feature = {
       updateEstimate(mode);
     });
 
-    modeControl.setDisabledState([bitrateSelect, monoCheck]);
+    const presetContainer = el("div", { class: "compress-slider-container" }, [
+      el("span", { class: "field-label text-xs row gap-xs align-center" }, [
+        el("span", { class: "material-symbols-outlined text-xs" }, ["sliders"]),
+        "Bitrate Presets:"
+      ]),
+      el("div", { class: "compress-presets-grid", style: "margin-top: 6px; grid-template-columns: repeat(3, 1fr);" }, [
+        presetBtn("64 kbps", "Voice", () => {
+          bitrateSelect.value = "64";
+          bitrateKbps = 64;
+          updateEstimate();
+        }),
+        presetBtn("128 kbps", "Standard", () => {
+          bitrateSelect.value = "128";
+          bitrateKbps = 128;
+          updateEstimate();
+        }),
+        presetBtn("192 kbps", "High", () => {
+          bitrateSelect.value = "192";
+          bitrateKbps = 192;
+          updateEstimate();
+        })
+      ])
+    ]);
+
+    modeControl.setDisabledState([presetContainer, bitrateSelect, monoCheck]);
 
     const updateEstimate = (_mode?: CompressMode) => {
       const activeAuds = entries.filter(isAud);
@@ -1071,6 +1113,7 @@ const audioCompressFeature: Feature = {
       fileListView.host,
       estimator.card,
       modeControl.container,
+      presetContainer,
       el("div", { class: "row gap-md align-center text-xs" }, [
         el("label", { class: "field-label" }, ["Target Bitrate:"]),
         bitrateSelect,
@@ -1083,15 +1126,15 @@ const audioCompressFeature: Feature = {
   }
 };
 
-// ── Feature 4: Video Compressor ────────────────────────────────
+// ── Feature 4: Video Compressor (Includes Animated GIF) ───────
 const videoCompressFeature: Feature = {
   id: "video-compress",
-  label: "Compress Video",
+  label: "Compress Video / GIF",
   mount(host, ctx) {
     let resHeight = 720;
     let muteAudio = false;
 
-    const isVid = (e: CompressEntry) => e.kind === "video" || e.mime.startsWith("video/");
+    const isVid = (e: CompressEntry) => e.kind === "video" || e.mime.startsWith("video/") || e.mime === "image/gif";
     const fileListView = createFileListView(isVid);
 
     const resSelect = el("select", { class: "select", style: "font-size: 11px; padding: 2px 6px;" }, [
@@ -1111,7 +1154,31 @@ const videoCompressFeature: Feature = {
       updateEstimate(mode);
     });
 
-    modeControl.setDisabledState([resSelect, muteCheck]);
+    const presetContainer = el("div", { class: "compress-slider-container" }, [
+      el("span", { class: "field-label text-xs row gap-xs align-center" }, [
+        el("span", { class: "material-symbols-outlined text-xs" }, ["sliders"]),
+        "Resolution Presets:"
+      ]),
+      el("div", { class: "compress-presets-grid", style: "margin-top: 6px; grid-template-columns: repeat(3, 1fr);" }, [
+        presetBtn("480p", "SD", () => {
+          resSelect.value = "480";
+          resHeight = 480;
+          updateEstimate();
+        }),
+        presetBtn("720p", "HD", () => {
+          resSelect.value = "720";
+          resHeight = 720;
+          updateEstimate();
+        }),
+        presetBtn("1080p", "Full HD", () => {
+          resSelect.value = "1080";
+          resHeight = 1080;
+          updateEstimate();
+        })
+      ])
+    ]);
+
+    modeControl.setDisabledState([presetContainer, resSelect, muteCheck]);
 
     const updateEstimate = (_mode?: CompressMode) => {
       const activeVids = entries.filter(isVid);
@@ -1139,14 +1206,14 @@ const videoCompressFeature: Feature = {
 
     const compressBtn = el("button", { class: "btn btn--primary", type: "button" }, [
       el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["movie"]),
-      "Compress Video(s)"
+      "Compress Video / GIF(s)"
     ]) as HTMLButtonElement;
 
     compressBtn.addEventListener("click", async () => {
       const activeVideos = entries.filter(isVid);
-      if (!activeVideos.length) return toast("Upload at least 1 video file (MP4, WEBM, MOV)", "error");
+      if (!activeVideos.length) return toast("Upload at least 1 video or GIF file (MP4, WEBM, MOV, GIF)", "error");
       compressBtn.disabled = true;
-      ctx.busy.spin("Compressing video(s)…");
+      ctx.busy.spin("Compressing video/GIF(s)…");
       try {
         const outFiles = [];
         for (let i = 0; i < activeVideos.length; i++) {
@@ -1170,29 +1237,30 @@ const videoCompressFeature: Feature = {
         ctx.showResult(
           outFiles,
           "video-compress",
-          "Compress Video",
+          "Compress Video / GIF",
           activeVideos.map((e) => e.file),
-          `Compressed ${activeVideos.length} video(s)`
+          `Compressed ${activeVideos.length} video/GIF(s)`
         );
-        toast("Video compression complete", "success");
+        toast("Video / GIF compression complete", "success");
       } catch (e) {
-        toast(`Video compression failed: ${e instanceof Error ? e.message : e}`, "error");
+        toast(`Video / GIF compression failed: ${e instanceof Error ? e.message : e}`, "error");
       } finally {
         compressBtn.disabled = false;
         ctx.busy.done();
       }
     });
 
-    const drop = dropzoneEl(ctx, "Upload video files (MP4, WEBM, MOV, AVI)", "video/*,.mp4,.webm,.mov,.avi,.mkv");
+    const drop = dropzoneEl(ctx, "Upload video files & GIF (MP4, WEBM, MOV, AVI, GIF)", "video/*,.mp4,.webm,.mov,.avi,.mkv,.gif,image/gif");
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
-        "Compress video files with resolution scaling, frame rate capping, and mute audio options."
+        "Compress video & animated GIF files with resolution scaling, frame rate capping, and mute audio options."
       ]),
       drop,
       fileListView.host,
       estimator.card,
       modeControl.container,
+      presetContainer,
       el("div", { class: "row gap-md align-center text-xs" }, [
         el("label", { class: "field-label" }, ["Target Resolution:"]),
         resSelect,
