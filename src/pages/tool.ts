@@ -1,4 +1,4 @@
-﻿import { toolById, loadToolModule } from "../config/tools";
+import { toolById, loadToolModule } from "../config/tools";
 import { el, clear } from "../lib/dom";
 
 export const renderToolPage = async (root: HTMLElement, id: string): Promise<void> => {
@@ -28,16 +28,31 @@ export const renderToolPage = async (root: HTMLElement, id: string): Promise<voi
   root.appendChild(el("div", { class: "tool-top" }, [back, el("h1", { class: "tool-title" }, [meta.title])]));
   root.appendChild(stage);
 
+  let mod;
   try {
-    const mod = await loadToolModule(meta.id);
-    mod.mount(stage);
-    stage.setAttribute("aria-busy", "false");
+    mod = await loadToolModule(meta.id);
   } catch {
     stage.replaceChildren(
       el("div", { class: "empty-state" }, [
         el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["construction"]),
         el("p", { class: "tool-title" }, [meta.title]),
         el("p", {}, ["This tool is planned but not built yet. Roadmap: ", meta.tier, "."]),
+        el("a", { class: "btn", href: "#/" }, ["Back to home"])
+      ])
+    );
+    return;
+  }
+
+  try {
+    mod.mount(stage);
+    stage.setAttribute("aria-busy", "false");
+  } catch (err) {
+    console.error(`Error mounting tool "${id}":`, err);
+    stage.replaceChildren(
+      el("div", { class: "empty-state" }, [
+        el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["error"]),
+        el("p", { class: "tool-title" }, [meta.title]),
+        el("p", {}, [`Runtime error: ${err instanceof Error ? err.message : String(err)}`]),
         el("a", { class: "btn", href: "#/" }, ["Back to home"])
       ])
     );

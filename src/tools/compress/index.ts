@@ -407,13 +407,17 @@ const createModeControl = (
     qualityElements.forEach((elItem) => {
       if ("disabled" in elItem) (elItem as HTMLInputElement).disabled = isTarget;
     });
-    onModeChange(isTarget ? "target-size" : "quality");
   };
 
-  radioQuality.addEventListener("change", updateState);
+  radioQuality.addEventListener("change", () => {
+    updateState();
+    onModeChange("quality");
+  });
+
   radioTarget.addEventListener("change", () => {
     updateState();
     numInput.focus();
+    onModeChange("target-size");
   });
 
   numInput.addEventListener("input", () => {
