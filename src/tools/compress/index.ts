@@ -973,11 +973,11 @@ const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: 
 
     const list = el(
       "ul",
-      { class: "file-list", style: "max-height: 240px; overflow-y: auto;" },
+      { class: "file-list", style: "max-height: 240px; overflow-y: auto; gap: 2px;" },
       filtered.map((e) => {
         const origIndex = entries.indexOf(e);
         const iconName = e.kind === "pdf" ? "picture_as_pdf" : e.kind === "image" ? "image" : e.kind === "audio" ? "graphic_eq" : e.kind === "video" ? "movie" : "description";
-        const removeBtn = el("button", { class: "btn btn--xs btn--ghost", type: "button", title: "Remove file" }, ["✕"]);
+        const removeBtn = el("button", { class: "btn btn--xs btn--ghost", type: "button", title: "Remove file", style: "padding: 2px 6px;" }, ["✕"]);
         removeBtn.addEventListener("click", () => removeEntry(origIndex));
 
         const presetOptions = [
@@ -1000,13 +1000,13 @@ const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: 
           notifyFileChange();
         });
 
-        return el("li", { class: "file-item", style: "padding: 6px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px;" }, [
-          el("div", { class: "row gap-xs align-center", style: "overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;" }, [
+        return el("li", { class: "file-item", style: "padding: 4px 8px; border-bottom: 1px solid var(--color-border-subtle); display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0;" }, [
+          el("div", { style: "display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin: 0;" }, [
             el("span", { class: "material-symbols-outlined text-xs" }, [iconName]),
             el("span", { class: "file-name text-xs", title: e.file.name, style: "overflow: hidden; text-overflow: ellipsis;" }, [e.file.name]),
             el("span", { class: "muted text-2xs" }, [formatBytes(e.file.size)])
           ]),
-          el("div", { class: "row gap-xs align-center" }, [
+          el("div", { style: "display: flex; align-items: center; gap: 6px; margin: 0;" }, [
             presetSelect,
             removeBtn
           ])
