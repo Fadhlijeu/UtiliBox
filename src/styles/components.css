@@ -1855,6 +1855,7 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   align-items: center;
   text-align: center;
   padding: var(--space-8) var(--space-4) var(--space-6);
+  margin-top: var(--space-6);
   margin-bottom: var(--space-4);
   background: linear-gradient(180deg, var(--color-paper-1) 0%, var(--color-paper-base) 100%);
   border: 1px solid var(--color-border);

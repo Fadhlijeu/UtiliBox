@@ -13,6 +13,8 @@ html[data-theme="dark"] {
   --color-border:     #27272a; /* Zinc 800 border */
   --color-border-strong: #3f3f46; /* Zinc 700 border strong */
 
+  --header-bg:        rgba(9, 9, 11, 0.85); /* Glassmorphic Dark Topbar */
+
   --color-ink:        #fafafa; /* Zinc 50 */
   --color-ink-2:      #e4e4e7; /* Zinc 200 */
   --color-ink-muted:  #a1a1aa; /* Zinc 400 */
@@ -80,6 +82,8 @@ html[data-theme="light"] {
   --color-paper-4:    #e2e8f0; /* Slate 200 border active */
   --color-border:     #e2e8f0; /* Slate 200 border */
   --color-border-strong: #cbd5e1; /* Slate 300 border strong */
+
+  --header-bg:        rgba(255, 255, 255, 0.85); /* Glassmorphic Light Topbar */
 
   --color-ink:        #0f172a; /* Slate 900 main text */
   --color-ink-2:      #334155; /* Slate 700 secondary text */
