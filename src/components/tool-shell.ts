@@ -147,10 +147,21 @@ export const ToolShell = (
     })
   );
 
+  const breadcrumb = el("nav", { class: "tool-breadcrumbs", "aria-label": "Breadcrumb" }, [
+    el("a", { class: "tool-breadcrumb__link", href: "#/" }, [
+      el("span", { class: "material-symbols-outlined text-xs" }, ["home"]),
+      "Home"
+    ]),
+    el("span", { class: "tool-breadcrumb__sep" }, ["/"]),
+    el("span", { class: "tool-breadcrumb__current" }, [title])
+  ]);
+
+  root.appendChild(breadcrumb);
+
   root.appendChild(el("div", { class: "tool-head" }, [
     el("div", { class: "tool-head__left" }, [
       el("h2", { class: "tool-title" }, [title]),
-      el("span", { class: "tool-head__sub muted" }, ["preview first, then download — 100% local"])
+      el("span", { class: "tool-head__sub muted" }, ["100% Client-Side • Local Privacy Engine"])
     ])
   ]));
 

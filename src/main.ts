@@ -1,7 +1,7 @@
 import { el } from "./lib/dom";
 import { renderHome } from "./pages/home";
 import { renderToolPage } from "./pages/tool";
-import { initTheme, toggleTheme } from "./lib/theme";
+import { initTheme, toggleTheme, getTheme } from "./lib/theme";
 import "./styles/tokens.css";
 import "./styles/global.css";
 import "./styles/shell.css";
@@ -27,23 +27,35 @@ const updateRecent = (id: string) => {
 
 // ── Shell builders ────────────────────────────────
 function buildHeader(): HTMLElement {
-  const search = el("input", {
+  const searchInput = el("input", {
     type: "search",
     class: "global-search",
-    placeholder: "Search tools…  (Ctrl K)",
+    placeholder: "Search tools…",
     "aria-label": "Search tools",
     autocomplete: "off"
   });
 
+  const searchKbd = el("kbd", { class: "global-search-kbd" }, ["⌘K"]);
+  const searchContainer = el("div", { class: "global-search-wrapper" }, [
+    el("span", { class: "material-symbols-outlined search-icon" }, ["search"]),
+    searchInput,
+    searchKbd
+  ]);
+
+  const currentTheme = getTheme();
+  const themeIcon = el("span", { class: "material-symbols-outlined" }, [
+    currentTheme === "dark" ? "light_mode" : "dark_mode"
+  ]);
+
   const themeBtn = el("button", {
-    class: "icon-btn",
-    title: "Toggle theme",
+    class: "icon-btn theme-toggle-btn",
+    title: "Toggle Light/Dark Theme",
     "aria-label": "Toggle theme"
-  }, [el("span", { class: "material-symbols-outlined" }, ["dark_mode"])]);
+  }, [themeIcon]);
 
   themeBtn.addEventListener("click", () => {
     const next = toggleTheme();
-    themeBtn.querySelector("span")!.textContent = next === "dark" ? "light_mode" : "dark_mode";
+    themeIcon.textContent = next === "dark" ? "light_mode" : "dark_mode";
   });
 
   return el("header", { class: "app-header" }, [
@@ -51,10 +63,10 @@ function buildHeader(): HTMLElement {
       el("a", { class: "brand", href: "#/" }, [
         el("span", { class: "brand__mark material-symbols-outlined", "aria-hidden": "true" }, ["widgets"]),
         el("span", { class: "brand__name" }, ["UtiliBox"]),
-        el("span", { class: "brand__tag muted" }, ["local toolbox"])
+        el("span", { class: "brand__tag" }, ["v1.0 Local"])
       ]),
-      search,
-      themeBtn
+      searchContainer,
+      el("div", { class: "header-actions" }, [themeBtn])
     ])
   ]);
 }
