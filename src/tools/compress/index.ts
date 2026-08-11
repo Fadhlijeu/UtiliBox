@@ -82,7 +82,7 @@ const removeEntry = (index: number) => {
   }
 };
 
-// ── Hard PDF Compression Engine (Canvas Re-encoding) ───────────
+// ── Hard PDF Compression Engine (High-Clarity Resolution) ──────
 const compressPdfBytes = async (
   pdfBytes: Uint8Array,
   qualityPercent: number,
@@ -95,8 +95,9 @@ const compressPdfBytes = async (
     const pageCount = pdfDoc.numPages;
     const outPdf = await PDFDocument.create();
 
-    const renderScale = Math.max(0.4, dpi / 150);
-    const jpegQuality = Math.max(0.1, Math.min(0.95, qualityPercent / 100));
+    // Preserve high clarity: render scale >= 1.5 to prevent blur
+    const renderScale = Math.max(1.5, dpi / 72);
+    const jpegQuality = Math.max(0.12, Math.min(0.95, qualityPercent / 100));
 
     for (let i = 1; i <= pageCount; i++) {
       const page = await pdfDoc.getPage(i);
@@ -187,7 +188,7 @@ const compressImageFile = async (
   });
 };
 
-// ── Audio Compression Helper (Web Audio API) ───────────────────
+// ── Audio Compression Helper ───────────────────────────────────
 const compressAudioFile = async (
   file: File,
   bitrateKbps: number,
@@ -389,7 +390,7 @@ const createModeControl = (
     step: "0.1",
     value: "1.0",
     class: "input",
-    style: "width: 95px;",
+    style: "width: 95px; font-weight: 600;",
     disabled: "disabled"
   }) as HTMLInputElement;
 
@@ -438,13 +439,13 @@ const createModeControl = (
     }
   });
 
-  const container = el("div", { class: "compress-mode-card", style: "margin: 12px 0; padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-md);" }, [
-    el("div", { class: "row gap-lg align-center" }, [
-      el("label", { class: "row gap-xs align-center field-label", style: "cursor: pointer; font-weight: 600;" }, [
+  const container = el("div", { class: "compress-mode-card", style: "margin: 14px 0; padding: 14px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-md);" }, [
+    el("div", { class: "row gap-lg align-center flex-wrap" }, [
+      el("label", { class: "row gap-xs align-center field-label", style: "cursor: pointer; font-weight: 700; color: var(--color-ink);" }, [
         radioQuality,
         "⚙️ Quality Slider / Presets"
       ]),
-      el("label", { class: "row gap-xs align-center field-label", style: "cursor: pointer; font-weight: 600;" }, [
+      el("label", { class: "row gap-xs align-center field-label", style: "cursor: pointer; font-weight: 700; color: var(--color-ink);" }, [
         radioTarget,
         "🎯 Target Max Size:"
       ]),
@@ -522,9 +523,9 @@ const docCompressFeature: Feature = {
 
     const qualityBadge = el("span", { class: "badge" }, ["65%"]);
     const dpiSelect = el("select", { class: "select" }, [
-      el("option", { value: "150" }, ["150 DPI (Recommended / E-book)"]),
-      el("option", { value: "72" }, ["72 DPI (Extreme Hard Compress / Web)"]),
-      el("option", { value: "300" }, ["300 DPI (Low / High Print Quality)"])
+      el("option", { value: "150" }, ["150 DPI (Recommended / Crisp Text)"]),
+      el("option", { value: "72" }, ["72 DPI (Web / Compact)"]),
+      el("option", { value: "300" }, ["300 DPI (High Print Quality)"])
     ]) as HTMLSelectElement;
 
     const grayscaleCheck = el("input", { type: "checkbox" }) as HTMLInputElement;
@@ -543,7 +544,7 @@ const docCompressFeature: Feature = {
       const activeDocs = entries.filter(isDoc);
       const bytes = activeDocs.reduce((acc, e) => acc + e.file.size, 0);
       const targetLimit = modeControl.getTargetBytes();
-      let ratio = (1 - qualityVal / 100) * 0.65 + (grayscaleVal ? 0.15 : 0) + (dpiSelect.value === "72" ? 0.15 : 0);
+      let ratio = (1 - qualityVal / 100) * 0.65 + (grayscaleVal ? 0.15 : 0);
       if (modeControl.getMode() === "target-size" && targetLimit && bytes > 0 && targetLimit < bytes) {
         ratio = Math.max(ratio, 1 - targetLimit / bytes);
       }
@@ -583,20 +584,38 @@ const docCompressFeature: Feature = {
           const entry = activeDocs[i];
           ctx.busy.progress(i / activeDocs.length, `Compressing ${entry.file.name}…`);
           
-          let curQuality = qualityVal;
-          let curDpi = Number(dpiSelect.value);
           let outBlob: Blob = entry.file;
 
           if (entry.kind === "pdf") {
-            for (let iter = 0; iter < 4; iter++) {
-              const compressedBytes = await compressPdfBytes(entry.data, curQuality, grayscaleVal, curDpi);
+            if (targetLimit && modeControl.getMode() === "target-size") {
+              // High-Precision Binary Search on Quality (Preserves resolution/clarity)
+              let low = 15;
+              let high = 95;
+              let bestBytes: Uint8Array = entry.data;
+
+              for (let iter = 0; iter < 7; iter++) {
+                const mid = Math.round((low + high) / 2);
+                const bytes = await compressPdfBytes(entry.data, mid, grayscaleVal, Number(dpiSelect.value));
+                if (bytes.length <= targetLimit) {
+                  bestBytes = bytes;
+                  low = mid + 1; // Try higher quality to converge close to target size!
+                } else {
+                  high = mid - 1; // Exceeded target limit
+                }
+              }
+
+              // Fallback if bestBytes still larger than targetLimit
+              if (bestBytes.length > targetLimit) {
+                bestBytes = await compressPdfBytes(entry.data, 20, grayscaleVal, 100);
+              }
+
+              outBlob = blobFromBytes(bestBytes, "application/pdf");
+            } else {
+              const compressedBytes = await compressPdfBytes(entry.data, qualityVal, grayscaleVal, Number(dpiSelect.value));
               outBlob = blobFromBytes(compressedBytes, "application/pdf");
-              if (!targetLimit || outBlob.size <= targetLimit || curQuality <= 10) break;
-              curQuality = Math.max(10, Math.floor(curQuality * 0.7));
-              curDpi = Math.max(72, Math.floor(curDpi * 0.8));
             }
           } else {
-            const compressedBytes = entry.data.slice(0, Math.max(10, Math.floor(entry.data.length * (curQuality / 100))));
+            const compressedBytes = entry.data.slice(0, Math.max(10, Math.floor(entry.data.length * (qualityVal / 100))));
             outBlob = blobFromBytes(compressedBytes, entry.mime || "application/octet-stream");
           }
 
@@ -634,7 +653,7 @@ const docCompressFeature: Feature = {
 
     host.append(
       el("p", { class: "tool-desc" }, [
-        "Hard compress PDF & documents using page canvas re-encoding, DPI scaling, and target file size matching."
+        "Hard compress PDF & documents using high-clarity canvas re-encoding and high-precision target size matching."
       ]),
       drop,
       fileListView.host,
@@ -749,16 +768,20 @@ const imageCompressFeature: Feature = {
           const imgEntry = activeImages[i];
           ctx.busy.progress(i / activeImages.length, `Compressing ${imgEntry.file.name}…`);
           
-          let curQuality = qualityVal;
-          let curScale = scaleRatio;
-          let res = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, curQuality, curScale);
+          let res = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, qualityVal, scaleRatio);
 
-          if (targetLimit) {
-            for (let iter = 0; iter < 4; iter++) {
-              if (res.blob.size <= targetLimit || curQuality <= 0.1) break;
-              curQuality *= 0.75;
-              curScale *= 0.85;
-              res = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, curQuality, curScale);
+          if (targetLimit && modeControl.getMode() === "target-size") {
+            let low = 0.15;
+            let high = 0.95;
+            for (let iter = 0; iter < 7; iter++) {
+              const mid = (low + high) / 2;
+              const testRes = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, mid, scaleRatio);
+              if (testRes.blob.size <= targetLimit) {
+                res = testRes;
+                low = mid + 0.05; // Push quality higher to match target size!
+              } else {
+                high = mid - 0.05;
+              }
             }
           }
 
@@ -796,7 +819,7 @@ const imageCompressFeature: Feature = {
 
     host.append(
       el("p", { class: "tool-desc" }, [
-        "Compress images with WebP/AVIF local encoders, dimension scaling, and target file size limits."
+        "Compress images with WebP/AVIF local encoders, dimension scaling, and high-precision target size limits."
       ]),
       drop,
       fileListView.host,
