@@ -631,12 +631,36 @@ const createModeControl = (
     onModeChange("target-size");
   });
 
+  const makeQuickPill = (valStr: string, unitStr: string) => {
+    const btn = el("button", {
+      class: "compress-quick-target-btn",
+      type: "button"
+    }, [`${valStr} ${unitStr}`]);
+
+    btn.addEventListener("click", () => {
+      numInput.value = valStr;
+      unitSelect.value = unitStr;
+      updateState("target-size");
+      onModeChange("target-size");
+    });
+    return btn;
+  };
+
+  const quickPillsRow = el("div", { class: "compress-quick-target-row" }, [
+    el("span", { class: "muted text-2xs" }, ["Quick Target:"]),
+    makeQuickPill("500", "KB"),
+    makeQuickPill("1.0", "MB"),
+    makeQuickPill("2.0", "MB"),
+    makeQuickPill("5.0", "MB")
+  ]);
+
   const container = el("div", { class: "compress-mode-card" }, [
     el("div", { class: "compress-mode-toggle-group" }, [pillQuality, pillTarget]),
     el("div", { class: "row align-center justify-between gap-xs", style: "padding: 2px 0;" }, [
       precisionToggle,
       targetInputGroup
-    ])
+    ]),
+    quickPillsRow
   ]);
 
   const getMode = (): CompressMode => activeMode;
@@ -666,6 +690,29 @@ const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: 
     const filtered = entries.filter(filterKind);
     if (!filtered.length) return;
 
+    const clearAllBtn = el("button", {
+      class: "btn btn--xs btn--ghost",
+      type: "button",
+      style: "color: var(--color-error); font-size: 11px;"
+    }, ["Clear All"]);
+
+    clearAllBtn.addEventListener("click", () => {
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (filterKind(entries[i])) {
+          entries.splice(i, 1);
+        }
+      }
+      notifyFileChange();
+    });
+
+    const header = el("div", { class: "file-list-header" }, [
+      el("span", { class: "file-list-title" }, [
+        el("span", { class: "material-symbols-outlined text-xs" }, ["folder_open"]),
+        `Staged Media (${filtered.length})`
+      ]),
+      clearAllBtn
+    ]);
+
     const list = el(
       "ul",
       { class: "file-list", style: "max-height: 180px; overflow-y: auto;" },
@@ -683,7 +730,7 @@ const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: 
         ]);
       })
     );
-    host.appendChild(list);
+    host.append(header, list);
   };
 
   return { host, render };
