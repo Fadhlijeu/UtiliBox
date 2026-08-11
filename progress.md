@@ -109,6 +109,7 @@ Status sesi ini: lint ✅, test ✅ (26), build ✅. Terakhir di-cek komitman: "
 
 | Tanggal/Sesi | Aktivitas |
 |---|---|
+| 2026-08-11 (round 26) | **Multi-Frame Animated GIF Engine**: Mengubah snapshot Canvas frame tunggal menjadi **Multi-Frame Stream Recording Engine (`compressAnimatedGifFile`)** menggunakan `requestAnimationFrame` loop & `canvas.captureStream(24)`; Memastikan animasi GIF 60MB tetap bergerak 100% ("tetap gerak") dan terkompresi secara akurat. |
 | 2026-08-11 (round 25) | **Preserve GIF Output Format**: Mengubah format output dan ekstensi hasil kompresi GIF agar tetap mempertahankan format `.gif` (`image/gif`) tanpa terkonversi ke WebP (`.webp`). |
 | 2026-08-11 (round 24) | **FIX GIF Compression Handler**: Mengimplementasikan `compressGifFile` berbasis HTML5 Canvas untuk menangani kompresi file `.gif` secara khusus; Mengeliminasi error dekode elemen `<video>` (`Failed to load video file`); File GIF dapat dikompresi dengan lancar pada skala resolusi target. |
 | 2026-08-11 (round 23) | **Exact Target Precision & Compact Split-Dashboard Redesign**: **Exact vs Approx Switch**: Opsi `Exact Match (~100% Target)` (konvergensi presisi 95-100% target size) vs `Approx (Max)` (fleksibel di bawah target); **Redesain UI/UX Compact Split-Dashboard**: Mengubah layout bertumpuk menjadi **2-Column Split Dashboard** (Kiri: Dropzone & List File; Kanan: Estimator, Switcher, Slider, & Button), mengurangi tinggi halaman hingga >50% tanpa scroll panjang. |

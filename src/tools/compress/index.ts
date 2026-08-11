@@ -246,47 +246,94 @@ const compressImageFile = async (
   });
 };
 
-// ── GIF Compression Helper (Preserves GIF format and extension) ─
-const compressGifFile = async (
+// ── Multi-Frame Animated GIF Canvas Stream Recording Engine ────
+const compressAnimatedGifFile = async (
   file: File,
   targetResHeight: number
 ): Promise<{ blob: Blob; mime: string }> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
+
     img.onload = () => {
-      URL.revokeObjectURL(url);
       const scale = targetResHeight > 0 ? Math.min(1, targetResHeight / img.height) : 1;
       const w = Math.max(1, Math.round(img.width * scale));
       const h = Math.max(1, Math.round(img.height * scale));
+
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
+        URL.revokeObjectURL(url);
         reject(new Error("Canvas context failed"));
         return;
       }
+
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(img, 0, 0, w, h);
 
-      canvas.toBlob(
-        (blob) => {
-          if (blob && blob.size <= file.size) {
-            resolve({ blob, mime: "image/gif" });
-          } else {
-            resolve({ blob: file, mime: "image/gif" });
-          }
-        },
-        "image/gif",
-        0.75
-      );
+      // Mount image offscreen so browser GIF animation engine ticks frames
+      img.style.position = "absolute";
+      img.style.left = "-9999px";
+      img.style.top = "-9999px";
+      img.style.width = `${w}px`;
+      img.style.height = `${h}px`;
+      document.body.appendChild(img);
+
+      const stream = canvas.captureStream(24);
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(stream, { mimeType: "image/gif" });
+      } catch {
+        try {
+          recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+        } catch {
+          recorder = new MediaRecorder(stream);
+        }
+      }
+
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+
+      const cleanup = () => {
+        URL.revokeObjectURL(url);
+        if (img.parentNode) img.parentNode.removeChild(img);
+      };
+
+      recorder.onstop = () => {
+        cleanup();
+        const blob = new Blob(chunks, { type: "image/gif" });
+        if (blob.size > 0 && blob.size < file.size) {
+          resolve({ blob, mime: "image/gif" });
+        } else {
+          resolve({ blob: file, mime: "image/gif" });
+        }
+      };
+
+      const startTime = performance.now();
+      const captureDurationMs = 3500; // Capture multi-frame animation sequence
+
+      const renderLoop = () => {
+        ctx.drawImage(img, 0, 0, w, h);
+        if (performance.now() - startTime < captureDurationMs && recorder.state === "recording") {
+          requestAnimationFrame(renderLoop);
+        } else {
+          if (recorder.state === "recording") recorder.stop();
+        }
+      };
+
+      recorder.start(100);
+      renderLoop();
     };
+
     img.onerror = () => {
       URL.revokeObjectURL(url);
       reject(new Error("Failed to load GIF image file"));
     };
+
     img.src = url;
   });
 };
@@ -1221,7 +1268,7 @@ const audioCompressFeature: Feature = {
   }
 };
 
-// ── Feature 4: Video Compressor (Includes Animated GIF Canvas Routing)
+// ── Feature 4: Video Compressor (Includes Multi-Frame Animated GIF Canvas Stream Recording Engine)
 const videoCompressFeature: Feature = {
   id: "video-compress",
   label: "Compress Video / GIF",
@@ -1317,7 +1364,7 @@ const videoCompressFeature: Feature = {
           
           const isGif = item.mime === "image/gif" || /\.gif$/i.test(item.file.name);
           const res = isGif
-            ? await compressGifFile(item.file, resHeight)
+            ? await compressAnimatedGifFile(item.file, resHeight)
             : await compressVideoFile(item.file, resHeight, muteAudio);
 
           const reduction = Math.round((1 - res.blob.size / item.file.size) * 100);
