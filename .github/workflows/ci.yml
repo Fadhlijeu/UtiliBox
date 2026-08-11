@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     name: lint · test · build
@@ -32,7 +36,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     concurrency:
       group: "pages"
-      cancel-in-progress: false
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
       pages: write
