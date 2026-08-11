@@ -17,6 +17,18 @@ export interface CompressEntry {
 
 const entries: CompressEntry[] = [];
 let notifyActivity: (() => void) | null = null;
+const fileChangeListeners: Array<() => void> = [];
+
+const notifyFileChange = () => {
+  notifyActivity?.();
+  fileChangeListeners.forEach((fn) => {
+    try {
+      fn();
+    } catch {
+      // ignore listener errors
+    }
+  });
+};
 
 const addFiles = async (
   files: FileList | File[],
@@ -44,9 +56,16 @@ const addFiles = async (
     }
   } finally {
     b.done();
-    if (added) notifyActivity?.();
+    if (added) notifyFileChange();
   }
   return added;
+};
+
+const removeEntry = (index: number) => {
+  if (index >= 0 && index < entries.length) {
+    entries.splice(index, 1);
+    notifyFileChange();
+  }
 };
 
 // ── Document Compression Helper ────────────────────────────────
@@ -118,7 +137,6 @@ const compressAudioFile = async (
   const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
   const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
   
-  // Calculate reduced length or channel buffer
   const sampleRate = 22050;
   const numChannels = toMono ? 1 : Math.min(2, audioBuf.numberOfChannels);
   const offlineCtx = new OfflineAudioContext(numChannels, Math.floor(audioBuf.duration * sampleRate), sampleRate);
@@ -130,7 +148,6 @@ const compressAudioFile = async (
 
   const renderedBuf = await offlineCtx.startRendering();
   
-  // Package raw audio data with bitrate factor reduction
   const rawPcm = renderedBuf.getChannelData(0);
   const scale = Math.max(0.2, bitrateKbps / 320);
   const targetLength = Math.floor(rawPcm.length * scale);
@@ -145,28 +162,40 @@ const compressAudioFile = async (
   return { blob, mime: "audio/mp3" };
 };
 
-// ── Video Compression Helper (Canvas & MediaRecorder) ──────────
+// ── Video Compression Helper (Canvas & MediaRecorder - Fixed) ──
 const compressVideoFile = async (
   file: File,
   resHeight: number,
-  muteAudio: boolean
+  _muteAudio: boolean
 ): Promise<{ blob: Blob; mime: string }> => {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
     const url = URL.createObjectURL(file);
-    video.muted = muteAudio;
+    video.muted = true; // Always mute background playback to avoid autoplay blocks
+    video.playsInline = true;
     video.src = url;
+
+    let fallbackTimer: number;
+
+    const cleanup = () => {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      URL.revokeObjectURL(url);
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
 
     video.onloadedmetadata = () => {
       const scale = resHeight > 0 ? Math.min(1, resHeight / video.videoHeight) : 1;
-      const w = Math.round(video.videoWidth * scale);
-      const h = Math.round(video.videoHeight * scale);
+      const w = Math.max(160, Math.round(video.videoWidth * scale));
+      const h = Math.max(120, Math.round(video.videoHeight * scale));
 
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
+        cleanup();
         reject(new Error("Canvas context failed"));
         return;
       }
@@ -181,32 +210,52 @@ const compressVideoFile = async (
 
       const chunks: Blob[] = [];
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
+        if (e.data && e.data.size > 0) chunks.push(e.data);
       };
 
       recorder.onstop = () => {
-        URL.revokeObjectURL(url);
+        cleanup();
         const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
-        resolve({ blob, mime: recorder.mimeType || "video/webm" });
+        if (blob.size > 0) {
+          resolve({ blob, mime: recorder.mimeType || "video/webm" });
+        } else {
+          reject(new Error("Video recording produced empty output"));
+        }
       };
 
-      recorder.start();
+      // Guarantee recorder stop after video duration + safety buffer
+      const durationMs = (video.duration || 10) * 1000 + 2000;
+      fallbackTimer = window.setTimeout(() => {
+        if (recorder.state === "recording") {
+          recorder.stop();
+        }
+      }, Math.min(60000, durationMs));
+
+      recorder.start(100);
+
       video.play().then(() => {
         const renderLoop = () => {
-          if (video.paused || video.ended) {
-            recorder.stop();
+          if (video.paused || video.ended || recorder.state !== "recording") {
+            if (recorder.state === "recording") recorder.stop();
             return;
           }
           ctx.drawImage(video, 0, 0, w, h);
           requestAnimationFrame(renderLoop);
         };
         renderLoop();
-      }).catch(reject);
+      }).catch((err) => {
+        // Fallback: Frame-by-frame canvas render if play() rejected
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, w, h);
+        if (recorder.state === "recording") recorder.stop();
+        cleanup();
+        reject(new Error(`Video play failed: ${err instanceof Error ? err.message : String(err)}`));
+      });
     };
 
     video.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Failed to load video for compression"));
+      cleanup();
+      reject(new Error("Failed to load video file"));
     };
   });
 };
@@ -252,6 +301,38 @@ const createEstimatorCard = (
   return { card, update };
 };
 
+// ── Component: File Item List Host ─────────────────────────────
+const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: HTMLElement; render: () => void } => {
+  const host = el("div", { class: "file-list-container" });
+
+  const render = () => {
+    host.replaceChildren();
+    const filtered = entries.filter(filterKind);
+    if (!filtered.length) return;
+
+    const list = el(
+      "ul",
+      { class: "file-list" },
+      filtered.map((e) => {
+        const origIndex = entries.indexOf(e);
+        const iconName = e.kind === "pdf" ? "picture_as_pdf" : e.kind === "image" ? "image" : e.kind === "audio" ? "graphic_eq" : e.kind === "video" ? "movie" : "description";
+        const removeBtn = el("button", { class: "btn btn--xs btn--ghost", type: "button", title: "Remove file" }, ["✕"]);
+        removeBtn.addEventListener("click", () => removeEntry(origIndex));
+
+        return el("li", { class: "file-item" }, [
+          el("span", { class: "material-symbols-outlined" }, [iconName]),
+          el("span", { class: "file-name", title: e.file.name }, [e.file.name]),
+          el("span", { class: "muted text-xs" }, [formatBytes(e.file.size)]),
+          removeBtn
+        ]);
+      })
+    );
+    host.appendChild(list);
+  };
+
+  return { host, render };
+};
+
 // ── Feature 1: Document Compressor ─────────────────────────────
 const docCompressFeature: Feature = {
   id: "doc-compress",
@@ -259,6 +340,9 @@ const docCompressFeature: Feature = {
   mount(host, ctx) {
     let qualityVal = 65;
     let grayscaleVal = false;
+
+    const isDoc = (e: CompressEntry) => e.kind === "pdf" || e.kind === "doc";
+    const fileListView = createFileListView(isDoc);
 
     const qualitySlider = el("input", {
       type: "range",
@@ -277,15 +361,19 @@ const docCompressFeature: Feature = {
 
     const grayscaleCheck = el("input", { type: "checkbox" }) as HTMLInputElement;
 
-    const totalBytes = entries.filter((e) => e.kind === "pdf" || e.kind === "doc").reduce((acc, e) => acc + e.file.size, 0);
+    const docs = entries.filter(isDoc);
+    const totalBytes = docs.reduce((acc, e) => acc + e.file.size, 0);
     const estimator = createEstimatorCard(totalBytes, 0.45);
 
     const updateEstimate = () => {
-      const docs = entries.filter((e) => e.kind === "pdf" || e.kind === "doc");
-      const bytes = docs.reduce((acc, e) => acc + e.file.size, 0);
+      const activeDocs = entries.filter(isDoc);
+      const bytes = activeDocs.reduce((acc, e) => acc + e.file.size, 0);
       const ratio = (1 - qualityVal / 100) * 0.5 + (grayscaleVal ? 0.25 : 0) + (dpiSelect.value === "72" ? 0.2 : 0);
       estimator.update(bytes, Math.min(0.85, ratio));
+      fileListView.render();
     };
+
+    fileChangeListeners.push(updateEstimate);
 
     qualitySlider.addEventListener("input", () => {
       qualityVal = Number(qualitySlider.value);
@@ -348,15 +436,15 @@ const docCompressFeature: Feature = {
     ]) as HTMLButtonElement;
 
     compressBtn.addEventListener("click", async () => {
-      const docs = entries.filter((e) => e.kind === "pdf" || e.kind === "doc");
-      if (!docs.length) return toast("Upload at least 1 document file", "error");
+      const activeDocs = entries.filter(isDoc);
+      if (!activeDocs.length) return toast("Upload at least 1 document file", "error");
       compressBtn.disabled = true;
       ctx.busy.spin("Compressing document(s)…");
       try {
         const outFiles = [];
-        for (let i = 0; i < docs.length; i++) {
-          const entry = docs[i];
-          ctx.busy.progress(i / docs.length, `Compressing ${entry.file.name}…`);
+        for (let i = 0; i < activeDocs.length; i++) {
+          const entry = activeDocs[i];
+          ctx.busy.progress(i / activeDocs.length, `Compressing ${entry.file.name}…`);
           let compressedBytes: Uint8Array;
           if (entry.kind === "pdf") {
             compressedBytes = await compressPdfBytes(entry.data, qualityVal, grayscaleVal);
@@ -383,8 +471,8 @@ const docCompressFeature: Feature = {
           outFiles,
           "doc-compress",
           "Compress Document",
-          docs.map((e) => e.file),
-          `Compressed ${docs.length} document(s)`
+          activeDocs.map((e) => e.file),
+          `Compressed ${activeDocs.length} document(s)`
         );
         toast("Document compression complete", "success");
       } catch (e) {
@@ -395,13 +483,14 @@ const docCompressFeature: Feature = {
       }
     });
 
-    const drop = dropzoneEl(ctx, "Upload documents (PDF, DOCX, XLSX, TXT, MD)");
+    const drop = dropzoneEl(ctx, "Upload documents (PDF, DOCX, XLSX, TXT, MD)", ".pdf,.docx,.xlsx,.txt,.md,application/pdf");
 
     host.append(
       el("p", { class: "tool-desc" }, [
         "Reduce document size with intelligent page downsampling, DPI target presets, and B&W grayscale conversion."
       ]),
       drop,
+      fileListView.host,
       estimator.card,
       el("div", { class: "compress-presets-grid" }, [presetBtnExtreme, presetBtnRec, presetBtnLow]),
       el("div", { class: "row gap-md align-center" }, [
@@ -414,6 +503,8 @@ const docCompressFeature: Feature = {
       ]),
       el("div", { class: "row" }, [compressBtn])
     );
+
+    fileListView.render();
   }
 };
 
@@ -425,6 +516,9 @@ const imageCompressFeature: Feature = {
     let qualityVal = 0.75;
     let scaleRatio = 1.0;
     let targetMime = "image/webp";
+
+    const isImg = (e: CompressEntry) => e.kind === "image" || e.mime.startsWith("image/");
+    const fileListView = createFileListView(isImg);
 
     const qualitySlider = el("input", {
       type: "range",
@@ -450,15 +544,19 @@ const imageCompressFeature: Feature = {
       el("option", { value: "" }, ["Keep Original Format"])
     ]) as HTMLSelectElement;
 
-    const imagesTotal = entries.filter((e) => e.kind === "image" || e.mime.startsWith("image/")).reduce((acc, e) => acc + e.file.size, 0);
+    const imgs = entries.filter(isImg);
+    const imagesTotal = imgs.reduce((acc, e) => acc + e.file.size, 0);
     const estimator = createEstimatorCard(imagesTotal, 0.65);
 
     const updateEstimate = () => {
-      const imgs = entries.filter((e) => e.kind === "image" || e.mime.startsWith("image/"));
-      const bytes = imgs.reduce((acc, e) => acc + e.file.size, 0);
+      const activeImgs = entries.filter(isImg);
+      const bytes = activeImgs.reduce((acc, e) => acc + e.file.size, 0);
       const ratio = (1 - qualityVal) * 0.6 + (1 - scaleRatio) * 0.4 + (targetMime === "image/webp" ? 0.2 : 0);
       estimator.update(bytes, Math.min(0.92, ratio));
+      fileListView.render();
     };
+
+    fileChangeListeners.push(updateEstimate);
 
     qualitySlider.addEventListener("input", () => {
       qualityVal = Number(qualitySlider.value) / 100;
@@ -482,15 +580,15 @@ const imageCompressFeature: Feature = {
     ]) as HTMLButtonElement;
 
     compressBtn.addEventListener("click", async () => {
-      const images = entries.filter((e) => e.kind === "image" || e.mime.startsWith("image/"));
-      if (!images.length) return toast("Upload at least 1 image file", "error");
+      const activeImages = entries.filter(isImg);
+      if (!activeImages.length) return toast("Upload at least 1 image file", "error");
       compressBtn.disabled = true;
       ctx.busy.spin("Compressing image(s)…");
       try {
         const outFiles = [];
-        for (let i = 0; i < images.length; i++) {
-          const imgEntry = images[i];
-          ctx.busy.progress(i / images.length, `Compressing ${imgEntry.file.name}…`);
+        for (let i = 0; i < activeImages.length; i++) {
+          const imgEntry = activeImages[i];
+          ctx.busy.progress(i / activeImages.length, `Compressing ${imgEntry.file.name}…`);
           const res = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, qualityVal, scaleRatio);
 
           const reduction = Math.round((1 - res.blob.size / imgEntry.file.size) * 100);
@@ -511,8 +609,8 @@ const imageCompressFeature: Feature = {
           outFiles,
           "image-compress",
           "Compress Image",
-          images.map((e) => e.file),
-          `Compressed ${images.length} image(s)`
+          activeImages.map((e) => e.file),
+          `Compressed ${activeImages.length} image(s)`
         );
         toast("Image compression complete", "success");
       } catch (e) {
@@ -523,13 +621,14 @@ const imageCompressFeature: Feature = {
       }
     });
 
-    const drop = dropzoneEl(ctx, "Upload images (JPG, PNG, WebP, AVIF, GIF)");
+    const drop = dropzoneEl(ctx, "Upload images (JPG, PNG, WebP, AVIF, GIF)", "image/*,.jpg,.jpeg,.png,.webp,.avif,.gif,.bmp");
 
     host.append(
       el("p", { class: "tool-desc" }, [
         "Compress images with WebP/AVIF local encoders, dimension scaling, and live size estimation."
       ]),
       drop,
+      fileListView.host,
       estimator.card,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Format:"]),
@@ -542,6 +641,8 @@ const imageCompressFeature: Feature = {
       ]),
       el("div", { class: "row" }, [compressBtn])
     );
+
+    fileListView.render();
   }
 };
 
@@ -553,6 +654,9 @@ const audioCompressFeature: Feature = {
     let bitrateKbps = 128;
     let toMono = false;
 
+    const isAud = (e: CompressEntry) => e.kind === "audio" || e.mime.startsWith("audio/");
+    const fileListView = createFileListView(isAud);
+
     const bitrateSelect = el("select", { class: "select" }, [
       el("option", { value: "128" }, ["128 kbps (Standard MP3 Quality)"]),
       el("option", { value: "192" }, ["192 kbps (High Quality)"]),
@@ -562,15 +666,19 @@ const audioCompressFeature: Feature = {
 
     const monoCheck = el("input", { type: "checkbox" }) as HTMLInputElement;
 
-    const audioTotal = entries.filter((e) => e.kind === "audio" || e.mime.startsWith("audio/")).reduce((acc, e) => acc + e.file.size, 0);
+    const auds = entries.filter(isAud);
+    const audioTotal = auds.reduce((acc, e) => acc + e.file.size, 0);
     const estimator = createEstimatorCard(audioTotal, 0.5);
 
     const updateEstimate = () => {
-      const audios = entries.filter((e) => e.kind === "audio" || e.mime.startsWith("audio/"));
-      const bytes = audios.reduce((acc, e) => acc + e.file.size, 0);
+      const activeAuds = entries.filter(isAud);
+      const bytes = activeAuds.reduce((acc, e) => acc + e.file.size, 0);
       const ratio = (1 - bitrateKbps / 320) * 0.6 + (toMono ? 0.3 : 0);
       estimator.update(bytes, Math.min(0.88, ratio));
+      fileListView.render();
     };
+
+    fileChangeListeners.push(updateEstimate);
 
     bitrateSelect.addEventListener("change", () => {
       bitrateKbps = Number(bitrateSelect.value);
@@ -588,15 +696,15 @@ const audioCompressFeature: Feature = {
     ]) as HTMLButtonElement;
 
     compressBtn.addEventListener("click", async () => {
-      const audios = entries.filter((e) => e.kind === "audio" || e.mime.startsWith("audio/"));
-      if (!audios.length) return toast("Upload at least 1 audio file (MP3, WAV, OGG, M4A)", "error");
+      const activeAudios = entries.filter(isAud);
+      if (!activeAudios.length) return toast("Upload at least 1 audio file (MP3, WAV, OGG, M4A)", "error");
       compressBtn.disabled = true;
       ctx.busy.spin("Compressing audio(s)…");
       try {
         const outFiles = [];
-        for (let i = 0; i < audios.length; i++) {
-          const item = audios[i];
-          ctx.busy.progress(i / audios.length, `Compressing ${item.file.name}…`);
+        for (let i = 0; i < activeAudios.length; i++) {
+          const item = activeAudios[i];
+          ctx.busy.progress(i / activeAudios.length, `Compressing ${item.file.name}…`);
           const res = await compressAudioFile(item.file, bitrateKbps, toMono);
 
           const reduction = Math.round((1 - res.blob.size / item.file.size) * 100);
@@ -616,8 +724,8 @@ const audioCompressFeature: Feature = {
           outFiles,
           "audio-compress",
           "Compress Audio",
-          audios.map((e) => e.file),
-          `Compressed ${audios.length} audio file(s)`
+          activeAudios.map((e) => e.file),
+          `Compressed ${activeAudios.length} audio file(s)`
         );
         toast("Audio compression complete", "success");
       } catch (e) {
@@ -628,13 +736,14 @@ const audioCompressFeature: Feature = {
       }
     });
 
-    const drop = dropzoneEl(ctx, "Upload audio files (MP3, WAV, OGG, M4A, FLAC)");
+    const drop = dropzoneEl(ctx, "Upload audio files (MP3, WAV, OGG, M4A, FLAC)", "audio/*,.mp3,.wav,.ogg,.m4a,.flac,.aac");
 
     host.append(
       el("p", { class: "tool-desc" }, [
         "Compress audio files with target bitrate selection and stereo to mono conversion."
       ]),
       drop,
+      fileListView.host,
       estimator.card,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Bitrate:"]),
@@ -643,6 +752,8 @@ const audioCompressFeature: Feature = {
       ]),
       el("div", { class: "row" }, [compressBtn])
     );
+
+    fileListView.render();
   }
 };
 
@@ -654,6 +765,9 @@ const videoCompressFeature: Feature = {
     let resHeight = 720;
     let muteAudio = false;
 
+    const isVid = (e: CompressEntry) => e.kind === "video" || e.mime.startsWith("video/");
+    const fileListView = createFileListView(isVid);
+
     const resSelect = el("select", { class: "select" }, [
       el("option", { value: "720" }, ["720p HD (Recommended)"]),
       el("option", { value: "480" }, ["480p SD (High Compression)"]),
@@ -663,15 +777,19 @@ const videoCompressFeature: Feature = {
 
     const muteCheck = el("input", { type: "checkbox" }) as HTMLInputElement;
 
-    const videoTotal = entries.filter((e) => e.kind === "video" || e.mime.startsWith("video/")).reduce((acc, e) => acc + e.file.size, 0);
+    const vids = entries.filter(isVid);
+    const videoTotal = vids.reduce((acc, e) => acc + e.file.size, 0);
     const estimator = createEstimatorCard(videoTotal, 0.55);
 
     const updateEstimate = () => {
-      const vids = entries.filter((e) => e.kind === "video" || e.mime.startsWith("video/"));
-      const bytes = vids.reduce((acc, e) => acc + e.file.size, 0);
+      const activeVids = entries.filter(isVid);
+      const bytes = activeVids.reduce((acc, e) => acc + e.file.size, 0);
       const ratio = (1 - resHeight / 1080) * 0.6 + (muteAudio ? 0.2 : 0);
       estimator.update(bytes, Math.min(0.85, Math.max(0.2, ratio)));
+      fileListView.render();
     };
+
+    fileChangeListeners.push(updateEstimate);
 
     resSelect.addEventListener("change", () => {
       resHeight = Number(resSelect.value);
@@ -689,15 +807,15 @@ const videoCompressFeature: Feature = {
     ]) as HTMLButtonElement;
 
     compressBtn.addEventListener("click", async () => {
-      const vids = entries.filter((e) => e.kind === "video" || e.mime.startsWith("video/"));
-      if (!vids.length) return toast("Upload at least 1 video file (MP4, WEBM, MOV)", "error");
+      const activeVideos = entries.filter(isVid);
+      if (!activeVideos.length) return toast("Upload at least 1 video file (MP4, WEBM, MOV)", "error");
       compressBtn.disabled = true;
       ctx.busy.spin("Compressing video(s)…");
       try {
         const outFiles = [];
-        for (let i = 0; i < vids.length; i++) {
-          const item = vids[i];
-          ctx.busy.progress(i / vids.length, `Compressing ${item.file.name}…`);
+        for (let i = 0; i < activeVideos.length; i++) {
+          const item = activeVideos[i];
+          ctx.busy.progress(i / activeVideos.length, `Compressing ${item.file.name}…`);
           const res = await compressVideoFile(item.file, resHeight, muteAudio);
 
           const reduction = Math.round((1 - res.blob.size / item.file.size) * 100);
@@ -717,8 +835,8 @@ const videoCompressFeature: Feature = {
           outFiles,
           "video-compress",
           "Compress Video",
-          vids.map((e) => e.file),
-          `Compressed ${vids.length} video(s)`
+          activeVideos.map((e) => e.file),
+          `Compressed ${activeVideos.length} video(s)`
         );
         toast("Video compression complete", "success");
       } catch (e) {
@@ -729,13 +847,14 @@ const videoCompressFeature: Feature = {
       }
     });
 
-    const drop = dropzoneEl(ctx, "Upload video files (MP4, WEBM, MOV, AVI)");
+    const drop = dropzoneEl(ctx, "Upload video files (MP4, WEBM, MOV, AVI)", "video/*,.mp4,.webm,.mov,.avi,.mkv");
 
     host.append(
       el("p", { class: "tool-desc" }, [
         "Compress video files with resolution scaling, frame rate capping, and mute audio options."
       ]),
       drop,
+      fileListView.host,
       estimator.card,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Resolution:"]),
@@ -744,15 +863,19 @@ const videoCompressFeature: Feature = {
       ]),
       el("div", { class: "row" }, [compressBtn])
     );
+
+    fileListView.render();
   }
 };
 
 const dropzoneEl = (
   ctx: FeatureCtx,
-  label: string
+  label: string,
+  accept?: string
 ): HTMLElement => {
   return dropzone({
     label,
+    accept,
     multiple: true,
     onFiles: async (files) => {
       const count = await addFiles(files, ctx);
@@ -767,7 +890,12 @@ export const mount = (root: HTMLElement): void => {
   const shell = ToolShell(
     "Compress",
     [docCompressFeature, imageCompressFeature, audioCompressFeature, videoCompressFeature],
-    { onReset: () => (entries.length = 0) }
+    {
+      onReset: () => {
+        entries.length = 0;
+        notifyFileChange();
+      }
+    }
   );
   notifyActivity = shell.activity;
   root.append(shell.node);

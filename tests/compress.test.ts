@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { toolById } from "../src/config/tools";
 
-describe("Compress Tool Suite & Real-Time Size Estimator", () => {
+describe("Compress Tool Suite, Accept Filters & Estimators", () => {
   it("registers generic Compress tool in tool registry", () => {
     const meta = toolById("compress");
     expect(meta).toBeDefined();
