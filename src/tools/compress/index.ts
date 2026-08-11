@@ -358,19 +358,38 @@ const createEstimatorCard = (
   return { card, update };
 };
 
-// ── Component: Target Size Controls ───────────────────────────
-const createTargetSizeControls = (): {
+export type CompressMode = "quality" | "target-size";
+
+// ── Component: Compression Mode Switcher ───────────────────────
+const createModeControl = (
+  uniqueId: string,
+  onModeChange: (mode: CompressMode) => void
+): {
   container: HTMLElement;
+  getMode: () => CompressMode;
   getTargetBytes: () => number | null;
+  setDisabledState: (elementsToDisable: HTMLElement[]) => void;
 } => {
-  const enableCheck = el("input", { type: "checkbox" }) as HTMLInputElement;
+  const radioQuality = el("input", {
+    type: "radio",
+    name: `compress-mode-${uniqueId}`,
+    value: "quality",
+    checked: "checked"
+  }) as HTMLInputElement;
+
+  const radioTarget = el("input", {
+    type: "radio",
+    name: `compress-mode-${uniqueId}`,
+    value: "target-size"
+  }) as HTMLInputElement;
+
   const numInput = el("input", {
     type: "number",
     min: "0.1",
     step: "0.1",
     value: "1.0",
     class: "input",
-    style: "width: 90px;",
+    style: "width: 95px;",
     disabled: "disabled"
   }) as HTMLInputElement;
 
@@ -379,25 +398,71 @@ const createTargetSizeControls = (): {
     el("option", { value: "KB" }, ["KB"])
   ]) as HTMLSelectElement;
 
-  enableCheck.addEventListener("change", () => {
-    numInput.disabled = !enableCheck.checked;
-    unitSelect.disabled = !enableCheck.checked;
+  let qualityElements: HTMLElement[] = [];
+
+  const updateState = () => {
+    const isTarget = radioTarget.checked;
+    numInput.disabled = !isTarget;
+    unitSelect.disabled = !isTarget;
+    qualityElements.forEach((elItem) => {
+      if ("disabled" in elItem) (elItem as HTMLInputElement).disabled = isTarget;
+    });
+    onModeChange(isTarget ? "target-size" : "quality");
+  };
+
+  radioQuality.addEventListener("change", updateState);
+  radioTarget.addEventListener("change", () => {
+    updateState();
+    numInput.focus();
   });
 
-  const container = el("div", { class: "row gap-md align-center", style: "padding: 6px 0;" }, [
-    el("label", { class: "row gap-xs align-center field-label" }, [enableCheck, "Target Max File Size:"]),
-    numInput,
-    unitSelect
+  numInput.addEventListener("input", () => {
+    if (!radioTarget.checked) {
+      radioTarget.checked = true;
+      updateState();
+    } else {
+      onModeChange("target-size");
+    }
+  });
+
+  unitSelect.addEventListener("change", () => {
+    if (!radioTarget.checked) {
+      radioTarget.checked = true;
+      updateState();
+    } else {
+      onModeChange("target-size");
+    }
+  });
+
+  const container = el("div", { class: "compress-mode-card", style: "margin: 12px 0; padding: 12px; background: var(--color-paper-2); border: 1px solid var(--color-border); border-radius: var(--radius-md);" }, [
+    el("div", { class: "row gap-lg align-center" }, [
+      el("label", { class: "row gap-xs align-center field-label", style: "cursor: pointer; font-weight: 600;" }, [
+        radioQuality,
+        "⚙️ Quality Slider / Presets"
+      ]),
+      el("label", { class: "row gap-xs align-center field-label", style: "cursor: pointer; font-weight: 600;" }, [
+        radioTarget,
+        "🎯 Target Max Size:"
+      ]),
+      numInput,
+      unitSelect
+    ])
   ]);
 
+  const getMode = (): CompressMode => (radioTarget.checked ? "target-size" : "quality");
   const getTargetBytes = (): number | null => {
-    if (!enableCheck.checked) return null;
+    if (!radioTarget.checked) return null;
     const val = Number(numInput.value);
     if (!val || val <= 0) return null;
     return unitSelect.value === "MB" ? Math.round(val * 1024 * 1024) : Math.round(val * 1024);
   };
 
-  return { container, getTargetBytes };
+  const setDisabledState = (elements: HTMLElement[]) => {
+    qualityElements = elements;
+    updateState();
+  };
+
+  return { container, getMode, getTargetBytes, setDisabledState };
 };
 
 // ── Component: File List View ──────────────────────────────────
@@ -442,7 +507,6 @@ const docCompressFeature: Feature = {
 
     const isDoc = (e: CompressEntry) => e.kind === "pdf" || e.kind === "doc";
     const fileListView = createFileListView(isDoc);
-    const targetSizeControls = createTargetSizeControls();
 
     const qualitySlider = el("input", {
       type: "range",
@@ -465,19 +529,25 @@ const docCompressFeature: Feature = {
     const totalBytes = docs.reduce((acc, e) => acc + e.file.size, 0);
     const estimator = createEstimatorCard(totalBytes, 0.75);
 
-    const updateEstimate = () => {
+    const modeControl = createModeControl("doc", (mode) => {
+      updateEstimate(mode);
+    });
+
+    modeControl.setDisabledState([qualitySlider, dpiSelect, grayscaleCheck]);
+
+    const updateEstimate = (_mode?: CompressMode) => {
       const activeDocs = entries.filter(isDoc);
       const bytes = activeDocs.reduce((acc, e) => acc + e.file.size, 0);
-      const targetLimit = targetSizeControls.getTargetBytes();
+      const targetLimit = modeControl.getTargetBytes();
       let ratio = (1 - qualityVal / 100) * 0.65 + (grayscaleVal ? 0.15 : 0) + (dpiSelect.value === "72" ? 0.15 : 0);
-      if (targetLimit && bytes > 0 && targetLimit < bytes) {
+      if (modeControl.getMode() === "target-size" && targetLimit && bytes > 0 && targetLimit < bytes) {
         ratio = Math.max(ratio, 1 - targetLimit / bytes);
       }
       estimator.update(bytes, Math.min(0.92, Math.max(0.1, ratio)));
       fileListView.render();
     };
 
-    fileChangeListeners.push(updateEstimate);
+    fileChangeListeners.push(() => updateEstimate());
 
     qualitySlider.addEventListener("input", () => {
       qualityVal = Number(qualitySlider.value);
@@ -485,7 +555,7 @@ const docCompressFeature: Feature = {
       updateEstimate();
     });
 
-    dpiSelect.addEventListener("change", updateEstimate);
+    dpiSelect.addEventListener("change", () => updateEstimate());
     grayscaleCheck.addEventListener("change", () => {
       grayscaleVal = grayscaleCheck.checked;
       updateEstimate();
@@ -503,7 +573,7 @@ const docCompressFeature: Feature = {
       ctx.busy.spin("Compressing document(s)…");
       try {
         const outFiles = [];
-        const targetLimit = targetSizeControls.getTargetBytes();
+        const targetLimit = modeControl.getTargetBytes();
 
         for (let i = 0; i < activeDocs.length; i++) {
           const entry = activeDocs[i];
@@ -565,7 +635,7 @@ const docCompressFeature: Feature = {
       drop,
       fileListView.host,
       estimator.card,
-      targetSizeControls.container,
+      modeControl.container,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Resolution (DPI):"]),
         dpiSelect,
@@ -592,7 +662,6 @@ const imageCompressFeature: Feature = {
 
     const isImg = (e: CompressEntry) => e.kind === "image" || e.mime.startsWith("image/");
     const fileListView = createFileListView(isImg);
-    const targetSizeControls = createTargetSizeControls();
 
     const qualitySlider = el("input", {
       type: "range",
@@ -622,15 +691,25 @@ const imageCompressFeature: Feature = {
     const imagesTotal = imgs.reduce((acc, e) => acc + e.file.size, 0);
     const estimator = createEstimatorCard(imagesTotal, 0.65);
 
-    const updateEstimate = () => {
+    const modeControl = createModeControl("img", (mode) => {
+      updateEstimate(mode);
+    });
+
+    modeControl.setDisabledState([qualitySlider, scaleSelect, formatSelect]);
+
+    const updateEstimate = (_mode?: CompressMode) => {
       const activeImgs = entries.filter(isImg);
       const bytes = activeImgs.reduce((acc, e) => acc + e.file.size, 0);
-      const ratio = (1 - qualityVal) * 0.6 + (1 - scaleRatio) * 0.4 + (targetMime === "image/webp" ? 0.2 : 0);
-      estimator.update(bytes, Math.min(0.92, ratio));
+      let ratio = (1 - qualityVal) * 0.6 + (1 - scaleRatio) * 0.4 + (targetMime === "image/webp" ? 0.2 : 0);
+      const targetLimit = modeControl.getTargetBytes();
+      if (modeControl.getMode() === "target-size" && targetLimit && bytes > 0 && targetLimit < bytes) {
+        ratio = Math.max(ratio, 1 - targetLimit / bytes);
+      }
+      estimator.update(bytes, Math.min(0.92, Math.max(0.1, ratio)));
       fileListView.render();
     };
 
-    fileChangeListeners.push(updateEstimate);
+    fileChangeListeners.push(() => updateEstimate());
 
     qualitySlider.addEventListener("input", () => {
       qualityVal = Number(qualitySlider.value) / 100;
@@ -660,7 +739,7 @@ const imageCompressFeature: Feature = {
       ctx.busy.spin("Compressing image(s)…");
       try {
         const outFiles = [];
-        const targetLimit = targetSizeControls.getTargetBytes();
+        const targetLimit = modeControl.getTargetBytes();
 
         for (let i = 0; i < activeImages.length; i++) {
           const imgEntry = activeImages[i];
@@ -718,7 +797,7 @@ const imageCompressFeature: Feature = {
       drop,
       fileListView.host,
       estimator.card,
-      targetSizeControls.container,
+      modeControl.container,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Format:"]),
         formatSelect,
@@ -745,7 +824,6 @@ const audioCompressFeature: Feature = {
 
     const isAud = (e: CompressEntry) => e.kind === "audio" || e.mime.startsWith("audio/");
     const fileListView = createFileListView(isAud);
-    const targetSizeControls = createTargetSizeControls();
 
     const bitrateSelect = el("select", { class: "select" }, [
       el("option", { value: "128" }, ["128 kbps (Standard MP3 Quality)"]),
@@ -760,15 +838,25 @@ const audioCompressFeature: Feature = {
     const audioTotal = auds.reduce((acc, e) => acc + e.file.size, 0);
     const estimator = createEstimatorCard(audioTotal, 0.5);
 
-    const updateEstimate = () => {
+    const modeControl = createModeControl("aud", (mode) => {
+      updateEstimate(mode);
+    });
+
+    modeControl.setDisabledState([bitrateSelect, monoCheck]);
+
+    const updateEstimate = (_mode?: CompressMode) => {
       const activeAuds = entries.filter(isAud);
       const bytes = activeAuds.reduce((acc, e) => acc + e.file.size, 0);
-      const ratio = (1 - bitrateKbps / 320) * 0.6 + (toMono ? 0.3 : 0);
+      let ratio = (1 - bitrateKbps / 320) * 0.6 + (toMono ? 0.3 : 0);
+      const targetLimit = modeControl.getTargetBytes();
+      if (modeControl.getMode() === "target-size" && targetLimit && bytes > 0 && targetLimit < bytes) {
+        ratio = Math.max(ratio, 1 - targetLimit / bytes);
+      }
       estimator.update(bytes, Math.min(0.88, ratio));
       fileListView.render();
     };
 
-    fileChangeListeners.push(updateEstimate);
+    fileChangeListeners.push(() => updateEstimate());
 
     bitrateSelect.addEventListener("change", () => {
       bitrateKbps = Number(bitrateSelect.value);
@@ -835,7 +923,7 @@ const audioCompressFeature: Feature = {
       drop,
       fileListView.host,
       estimator.card,
-      targetSizeControls.container,
+      modeControl.container,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Bitrate:"]),
         bitrateSelect,
@@ -858,7 +946,6 @@ const videoCompressFeature: Feature = {
 
     const isVid = (e: CompressEntry) => e.kind === "video" || e.mime.startsWith("video/");
     const fileListView = createFileListView(isVid);
-    const targetSizeControls = createTargetSizeControls();
 
     const resSelect = el("select", { class: "select" }, [
       el("option", { value: "720" }, ["720p HD (Recommended)"]),
@@ -873,15 +960,25 @@ const videoCompressFeature: Feature = {
     const videoTotal = vids.reduce((acc, e) => acc + e.file.size, 0);
     const estimator = createEstimatorCard(videoTotal, 0.55);
 
-    const updateEstimate = () => {
+    const modeControl = createModeControl("vid", (mode) => {
+      updateEstimate(mode);
+    });
+
+    modeControl.setDisabledState([resSelect, muteCheck]);
+
+    const updateEstimate = (_mode?: CompressMode) => {
       const activeVids = entries.filter(isVid);
       const bytes = activeVids.reduce((acc, e) => acc + e.file.size, 0);
-      const ratio = (1 - resHeight / 1080) * 0.6 + (muteAudio ? 0.2 : 0);
+      let ratio = (1 - resHeight / 1080) * 0.6 + (muteAudio ? 0.2 : 0);
+      const targetLimit = modeControl.getTargetBytes();
+      if (modeControl.getMode() === "target-size" && targetLimit && bytes > 0 && targetLimit < bytes) {
+        ratio = Math.max(ratio, 1 - targetLimit / bytes);
+      }
       estimator.update(bytes, Math.min(0.85, Math.max(0.2, ratio)));
       fileListView.render();
     };
 
-    fileChangeListeners.push(updateEstimate);
+    fileChangeListeners.push(() => updateEstimate());
 
     resSelect.addEventListener("change", () => {
       resHeight = Number(resSelect.value);
@@ -948,7 +1045,7 @@ const videoCompressFeature: Feature = {
       drop,
       fileListView.host,
       estimator.card,
-      targetSizeControls.container,
+      modeControl.container,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Resolution:"]),
         resSelect,
