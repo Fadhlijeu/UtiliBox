@@ -185,10 +185,8 @@ const compressPdfTargetMatch = async (
       if (test.length <= targetBytes) {
         dpiBest = test;
         if (precision === "exact") {
-          // Exact Mode: Aim as high as possible to reach ~100% of target size
           lowQ = midQ + 1;
         } else {
-          // Approx Mode: Fits under target
           lowQ = midQ + 2;
         }
       } else {
@@ -243,6 +241,51 @@ const compressImageFile = async (
     img.onerror = () => {
       URL.revokeObjectURL(url);
       reject(new Error("Failed to load image for compression"));
+    };
+    img.src = url;
+  });
+};
+
+// ── GIF Compression Helper (Dedicated Canvas Image Handler) ────
+const compressGifFile = async (
+  file: File,
+  targetResHeight: number
+): Promise<{ blob: Blob; mime: string }> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = targetResHeight > 0 ? Math.min(1, targetResHeight / img.height) : 1;
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas context failed"));
+        return;
+      }
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, w, h);
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob && blob.size <= file.size) {
+            resolve({ blob, mime: "image/webp" });
+          } else {
+            resolve({ blob: file, mime: file.type || "image/gif" });
+          }
+        },
+        "image/webp",
+        0.75
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to load GIF image file"));
     };
     img.src = url;
   });
@@ -764,7 +807,6 @@ const docCompressFeature: Feature = {
 
     const drop = dropzoneEl(ctx, "Upload documents (PDF, DOCX, XLSX, TXT)", ".pdf,.docx,.xlsx,.txt,.md,application/pdf");
 
-    // Compact Split-Dashboard Grid
     const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
     const rightPanel = el("div", { class: "compress-panel-right" }, [
       estimator.card,
@@ -944,7 +986,7 @@ const imageCompressFeature: Feature = {
                 if (testRes.blob.size <= targetLimit && testRes.blob.size <= imgEntry.file.size) {
                   bestRes = testRes;
                   if (precision === "exact") {
-                    low = mid + 0.02; // Push quality to land close to target size!
+                    low = mid + 0.02;
                   } else {
                     low = mid + 0.05;
                   }
@@ -1179,7 +1221,7 @@ const audioCompressFeature: Feature = {
   }
 };
 
-// ── Feature 4: Video Compressor (Compact Dashboard Layout) ─────
+// ── Feature 4: Video Compressor (Includes Animated GIF Canvas Routing)
 const videoCompressFeature: Feature = {
   id: "video-compress",
   label: "Compress Video / GIF",
@@ -1272,14 +1314,19 @@ const videoCompressFeature: Feature = {
         for (let i = 0; i < activeVideos.length; i++) {
           const item = activeVideos[i];
           ctx.busy.progress(i / activeVideos.length, `Compressing ${item.file.name}…`);
-          const res = await compressVideoFile(item.file, resHeight, muteAudio);
+          
+          const isGif = item.mime === "image/gif" || /\.gif$/i.test(item.file.name);
+          const res = isGif
+            ? await compressGifFile(item.file, resHeight)
+            : await compressVideoFile(item.file, resHeight, muteAudio);
 
           const reduction = Math.round((1 - res.blob.size / item.file.size) * 100);
           const reductionLabel = reduction > 0 ? `-${reduction}%` : "same size";
           const base = item.file.name.replace(/\.[^/.]+$/, "");
+          const ext = isGif ? (res.mime.split("/")[1] ?? "webp") : "webm";
 
           outFiles.push({
-            name: `${base}-compressed.webm`,
+            name: `${base}-compressed.${ext}`,
             blob: res.blob,
             mime: res.mime,
             sourceFeatureId: "video-compress",
