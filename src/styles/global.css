@@ -1,4 +1,4 @@
-/* UtiliBox · global base styles — axiom: toolbox, not showcase */
+/* UtiliBox · Global Base Styles (Shadcn UI Dark System) */
 
 *,
 *::before,
@@ -14,13 +14,10 @@ body {
 }
 
 html {
-  color-scheme: light;
-  -webkit-text-size-adjust: 100%;
-}
-
-html[data-theme="dark"],
-html[data-theme="dark"] body {
   color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -32,13 +29,13 @@ body {
   transition: background var(--duration-normal) var(--ease-standard);
 }
 
-h1, h2, h3, h4 {
+h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
   font-weight: 600;
-  font-style: normal; /* Hallmark: never italic headers */
-  line-height: 1.15;
+  line-height: 1.2;
   margin: 0;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
 }
 
 code, pre, kbd, samp, .mono {
@@ -63,13 +60,33 @@ button {
 
 ::selection {
   background: var(--color-accent-dim);
+  color: #ffffff;
+}
+
+/* Custom Shadcn Dark Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-paper-1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-paper-3);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-paper-4);
 }
 
 /* Utilities */
 .container {
-  max-width: 1180px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 0 var(--space-5);
+  padding: 0 var(--space-4);
 }
 
 .hidden {

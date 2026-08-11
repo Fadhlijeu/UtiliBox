@@ -109,6 +109,7 @@ Status sesi ini: lint ✅, test ✅ (26), build ✅. Terakhir di-cek komitman: "
 
 | Tanggal/Sesi | Aktivitas |
 |---|---|
+| 2026-08-11 (round 27) | **Shadcn UI Dark Theme Redesign (Branch: feature/shadcn-ui-redesign)**: Dibuat branch terpisah `feature/shadcn-ui-redesign` untuk mengisolasi eksperimen tanpa menyentuh `main`; Redesain total sistem warna Shadcn Zinc 950 (`#09090b`), kartu elevated `#121215`, aksen Indigo `#6366f1`, glassmorphic topbar, segmented mode pills, tombol micro-interaction, dan dropzone border glow; Dev server aktif di `http://localhost:5173/`. |
 | 2026-08-11 (round 26) | **Multi-Frame Animated GIF Engine**: Mengubah snapshot Canvas frame tunggal menjadi **Multi-Frame Stream Recording Engine (`compressAnimatedGifFile`)** menggunakan `requestAnimationFrame` loop & `canvas.captureStream(24)`; Memastikan animasi GIF 60MB tetap bergerak 100% ("tetap gerak") dan terkompresi secara akurat. |
 | 2026-08-11 (round 25) | **Preserve GIF Output Format**: Mengubah format output dan ekstensi hasil kompresi GIF agar tetap mempertahankan format `.gif` (`image/gif`) tanpa terkonversi ke WebP (`.webp`). |
 | 2026-08-11 (round 24) | **FIX GIF Compression Handler**: Mengimplementasikan `compressGifFile` berbasis HTML5 Canvas untuk menangani kompresi file `.gif` secara khusus; Mengeliminasi error dekode elemen `<video>` (`Failed to load video file`); File GIF dapat dikompresi dengan lancar pada skala resolusi target. |
