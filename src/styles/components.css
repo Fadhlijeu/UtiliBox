@@ -1848,19 +1848,60 @@ textarea.codearea:focus { outline: 2px solid var(--color-focus); outline-offset:
   pointer-events: none;
 }
 
-/* ── Home Hero Section ── */
+/* ── Home Hero Section (Mesh Gradient & Film Grain Overlay) ── */
 .home-hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: var(--space-8) var(--space-4) var(--space-6);
+  padding: var(--space-10) var(--space-6);
   margin-top: var(--space-6);
-  margin-bottom: var(--space-4);
-  background: linear-gradient(180deg, var(--color-paper-1) 0%, var(--color-paper-base) 100%);
+  margin-bottom: var(--space-6);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  transition: all var(--duration-normal) var(--ease-standard);
+}
+
+/* Dark Theme Mesh Background */
+html[data-theme="dark"] .home-hero,
+:root .home-hero {
+  background-color: #0f172a;
+  background-image: 
+    radial-gradient(at 76% 12%, #0f172a 0px, transparent 60%),
+    radial-gradient(at 32% 85%, #1e3a8a 0px, transparent 60%),
+    radial-gradient(at 76% 82%, #3b82f6 0px, transparent 60%),
+    radial-gradient(at 39% 37%, #0ea5e9 0px, transparent 60%);
+}
+
+/* Light Theme Mesh Background (Generated Soft Indigo & Sky Cyan Pastel Mesh) */
+html[data-theme="light"] .home-hero {
+  background-color: #f8fafc;
+  background-image: 
+    radial-gradient(at 18% 22%, #e0e7ff 0px, transparent 60%),
+    radial-gradient(at 82% 18%, #e0f2fe 0px, transparent 60%),
+    radial-gradient(at 78% 85%, #f1f5f9 0px, transparent 60%),
+    radial-gradient(at 30% 80%, #ddd6fe 0px, transparent 60%);
+}
+
+/* Film Grain Overlay */
+.home-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.18;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* Ensure text and child elements sit above background & grain */
+.home-hero > * {
+  position: relative;
+  z-index: 2;
 }
 
 .home-hero__badge-pill {
