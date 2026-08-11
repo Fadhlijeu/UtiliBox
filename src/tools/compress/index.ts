@@ -8,6 +8,20 @@ import { SAME_TOOL_EVENT } from "../../components/output-panel";
 import { PDFDocument } from "pdf-lib";
 import type { Busy } from "../../components/busy";
 
+let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
+const getPdfJs = (): Promise<typeof import("pdfjs-dist")> => {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import("pdfjs-dist").then((mod) => {
+      mod.GlobalWorkerOptions.workerSrc = new URL(
+        "pdfjs-dist/build/pdf.worker.min.mjs",
+        import.meta.url
+      ).toString();
+      return mod;
+    });
+  }
+  return pdfjsPromise;
+};
+
 export interface CompressEntry {
   file: File;
   data: Uint8Array;
@@ -25,7 +39,7 @@ const notifyFileChange = () => {
     try {
       fn();
     } catch {
-      // ignore listener errors
+      // ignore
     }
   });
 };
@@ -68,22 +82,68 @@ const removeEntry = (index: number) => {
   }
 };
 
-// ── Document Compression Helper ────────────────────────────────
+// ── Hard PDF Compression Engine (Canvas Re-encoding) ───────────
 const compressPdfBytes = async (
   pdfBytes: Uint8Array,
   qualityPercent: number,
-  grayscale: boolean
+  grayscale: boolean,
+  dpi: number = 150
 ): Promise<Uint8Array> => {
-  const pdfDoc = await PDFDocument.load(pdfBytes);
-  if (grayscale || qualityPercent < 80) {
-    const pageCount = pdfDoc.getPageCount();
-    for (let i = 0; i < pageCount; i++) {
-      const page = pdfDoc.getPage(i);
-      const { width, height } = page.getSize();
-      page.setSize(width, height);
+  try {
+    const pdfjs = await getPdfJs();
+    const pdfDoc = await pdfjs.getDocument({ data: pdfBytes.slice() }).promise;
+    const pageCount = pdfDoc.numPages;
+    const outPdf = await PDFDocument.create();
+
+    const renderScale = Math.max(0.4, dpi / 150);
+    const jpegQuality = Math.max(0.1, Math.min(0.95, qualityPercent / 100));
+
+    for (let i = 1; i <= pageCount; i++) {
+      const page = await pdfDoc.getPage(i);
+      const viewport = page.getViewport({ scale: renderScale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, viewport.width);
+      canvas.height = Math.max(1, viewport.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+
+      await page.render({ canvas, viewport }).promise;
+
+      if (grayscale) {
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imgData.data;
+        for (let p = 0; p < data.length; p += 4) {
+          const gray = 0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2];
+          data[p] = gray;
+          data[p + 1] = gray;
+          data[p + 2] = gray;
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+
+      const dataUrl = canvas.toDataURL("image/jpeg", jpegQuality);
+      const base64Str = dataUrl.split(",")[1];
+      const binaryStr = atob(base64Str);
+      const jpegBytes = new Uint8Array(binaryStr.length);
+      for (let j = 0; j < binaryStr.length; j++) {
+        jpegBytes[j] = binaryStr.charCodeAt(j);
+      }
+
+      const embeddedJpg = await outPdf.embedJpg(jpegBytes);
+      const newPage = outPdf.addPage([embeddedJpg.width, embeddedJpg.height]);
+      newPage.drawImage(embeddedJpg, {
+        x: 0,
+        y: 0,
+        width: embeddedJpg.width,
+        height: embeddedJpg.height
+      });
     }
+
+    return await outPdf.save({ useObjectStreams: true });
+  } catch {
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    return await pdfDoc.save({ useObjectStreams: true });
   }
-  return await pdfDoc.save({ useObjectStreams: true });
 };
 
 // ── Image Compression Helper ───────────────────────────────────
@@ -101,8 +161,8 @@ const compressImageFile = async (
       const w = Math.round(img.width * scaleRatio);
       const h = Math.round(img.height * scaleRatio);
       const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
+      canvas.width = Math.max(1, w);
+      canvas.height = Math.max(1, h);
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         reject(new Error("Canvas context failed"));
@@ -147,7 +207,6 @@ const compressAudioFile = async (
   source.start(0);
 
   const renderedBuf = await offlineCtx.startRendering();
-  
   const rawPcm = renderedBuf.getChannelData(0);
   const scale = Math.max(0.2, bitrateKbps / 320);
   const targetLength = Math.floor(rawPcm.length * scale);
@@ -162,7 +221,7 @@ const compressAudioFile = async (
   return { blob, mime: "audio/mp3" };
 };
 
-// ── Video Compression Helper (Canvas & MediaRecorder - Fixed) ──
+// ── Video Compression Helper ───────────────────────────────────
 const compressVideoFile = async (
   file: File,
   resHeight: number,
@@ -171,7 +230,7 @@ const compressVideoFile = async (
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
     const url = URL.createObjectURL(file);
-    video.muted = true; // Always mute background playback to avoid autoplay blocks
+    video.muted = true;
     video.playsInline = true;
     video.src = url;
 
@@ -223,7 +282,6 @@ const compressVideoFile = async (
         }
       };
 
-      // Guarantee recorder stop after video duration + safety buffer
       const durationMs = (video.duration || 10) * 1000 + 2000;
       fallbackTimer = window.setTimeout(() => {
         if (recorder.state === "recording") {
@@ -244,7 +302,6 @@ const compressVideoFile = async (
         };
         renderLoop();
       }).catch((err) => {
-        // Fallback: Frame-by-frame canvas render if play() rejected
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, w, h);
         if (recorder.state === "recording") recorder.stop();
@@ -293,7 +350,7 @@ const createEstimatorCard = (
     originalLabel.textContent = formatBytes(bytes);
     const est = Math.max(1024, Math.round(bytes * (1 - ratio)));
     estimatedLabel.textContent = formatBytes(est);
-    const pct = Math.round(ratio * 100);
+    const pct = Math.min(95, Math.max(0, Math.round(ratio * 100)));
     badge.textContent = `-${pct}% Reduction`;
     progressFill.style.width = `${Math.max(10, 100 - pct)}%`;
   };
@@ -301,7 +358,49 @@ const createEstimatorCard = (
   return { card, update };
 };
 
-// ── Component: File Item List Host ─────────────────────────────
+// ── Component: Target Size Controls ───────────────────────────
+const createTargetSizeControls = (): {
+  container: HTMLElement;
+  getTargetBytes: () => number | null;
+} => {
+  const enableCheck = el("input", { type: "checkbox" }) as HTMLInputElement;
+  const numInput = el("input", {
+    type: "number",
+    min: "0.1",
+    step: "0.1",
+    value: "1.0",
+    class: "input",
+    style: "width: 90px;",
+    disabled: "disabled"
+  }) as HTMLInputElement;
+
+  const unitSelect = el("select", { class: "select", disabled: "disabled" }, [
+    el("option", { value: "MB" }, ["MB"]),
+    el("option", { value: "KB" }, ["KB"])
+  ]) as HTMLSelectElement;
+
+  enableCheck.addEventListener("change", () => {
+    numInput.disabled = !enableCheck.checked;
+    unitSelect.disabled = !enableCheck.checked;
+  });
+
+  const container = el("div", { class: "row gap-md align-center", style: "padding: 6px 0;" }, [
+    el("label", { class: "row gap-xs align-center field-label" }, [enableCheck, "Target Max File Size:"]),
+    numInput,
+    unitSelect
+  ]);
+
+  const getTargetBytes = (): number | null => {
+    if (!enableCheck.checked) return null;
+    const val = Number(numInput.value);
+    if (!val || val <= 0) return null;
+    return unitSelect.value === "MB" ? Math.round(val * 1024 * 1024) : Math.round(val * 1024);
+  };
+
+  return { container, getTargetBytes };
+};
+
+// ── Component: File List View ──────────────────────────────────
 const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: HTMLElement; render: () => void } => {
   const host = el("div", { class: "file-list-container" });
 
@@ -343,6 +442,7 @@ const docCompressFeature: Feature = {
 
     const isDoc = (e: CompressEntry) => e.kind === "pdf" || e.kind === "doc";
     const fileListView = createFileListView(isDoc);
+    const targetSizeControls = createTargetSizeControls();
 
     const qualitySlider = el("input", {
       type: "range",
@@ -355,7 +455,7 @@ const docCompressFeature: Feature = {
     const qualityBadge = el("span", { class: "badge" }, ["65%"]);
     const dpiSelect = el("select", { class: "select" }, [
       el("option", { value: "150" }, ["150 DPI (Recommended / E-book)"]),
-      el("option", { value: "72" }, ["72 DPI (Extreme / Web & Mobile)"]),
+      el("option", { value: "72" }, ["72 DPI (Extreme Hard Compress / Web)"]),
       el("option", { value: "300" }, ["300 DPI (Low / High Print Quality)"])
     ]) as HTMLSelectElement;
 
@@ -363,13 +463,17 @@ const docCompressFeature: Feature = {
 
     const docs = entries.filter(isDoc);
     const totalBytes = docs.reduce((acc, e) => acc + e.file.size, 0);
-    const estimator = createEstimatorCard(totalBytes, 0.45);
+    const estimator = createEstimatorCard(totalBytes, 0.75);
 
     const updateEstimate = () => {
       const activeDocs = entries.filter(isDoc);
       const bytes = activeDocs.reduce((acc, e) => acc + e.file.size, 0);
-      const ratio = (1 - qualityVal / 100) * 0.5 + (grayscaleVal ? 0.25 : 0) + (dpiSelect.value === "72" ? 0.2 : 0);
-      estimator.update(bytes, Math.min(0.85, ratio));
+      const targetLimit = targetSizeControls.getTargetBytes();
+      let ratio = (1 - qualityVal / 100) * 0.65 + (grayscaleVal ? 0.15 : 0) + (dpiSelect.value === "72" ? 0.15 : 0);
+      if (targetLimit && bytes > 0 && targetLimit < bytes) {
+        ratio = Math.max(ratio, 1 - targetLimit / bytes);
+      }
+      estimator.update(bytes, Math.min(0.92, Math.max(0.1, ratio)));
       fileListView.render();
     };
 
@@ -387,52 +491,9 @@ const docCompressFeature: Feature = {
       updateEstimate();
     });
 
-    // Preset buttons
-    const presetBtnExtreme = el("button", { class: "compress-preset-btn", type: "button" }, [
-      el("span", { class: "compress-preset-btn__title" }, ["⚡ Extreme"]),
-      el("span", { class: "compress-preset-btn__desc" }, ["72 DPI · B&W · 40%"])
-    ]);
-    presetBtnExtreme.addEventListener("click", () => {
-      qualitySlider.value = "40";
-      qualityVal = 40;
-      qualityBadge.textContent = "40%";
-      dpiSelect.value = "72";
-      grayscaleCheck.checked = true;
-      grayscaleVal = true;
-      updateEstimate();
-    });
-
-    const presetBtnRec = el("button", { class: "compress-preset-btn compress-preset-btn--active", type: "button" }, [
-      el("span", { class: "compress-preset-btn__title" }, ["⚙️ Recommended"]),
-      el("span", { class: "compress-preset-btn__desc" }, ["150 DPI · Color · 65%"])
-    ]);
-    presetBtnRec.addEventListener("click", () => {
-      qualitySlider.value = "65";
-      qualityVal = 65;
-      qualityBadge.textContent = "65%";
-      dpiSelect.value = "150";
-      grayscaleCheck.checked = false;
-      grayscaleVal = false;
-      updateEstimate();
-    });
-
-    const presetBtnLow = el("button", { class: "compress-preset-btn", type: "button" }, [
-      el("span", { class: "compress-preset-btn__title" }, ["🔍 Low"]),
-      el("span", { class: "compress-preset-btn__desc" }, ["300 DPI · Color · 85%"])
-    ]);
-    presetBtnLow.addEventListener("click", () => {
-      qualitySlider.value = "85";
-      qualityVal = 85;
-      qualityBadge.textContent = "85%";
-      dpiSelect.value = "300";
-      grayscaleCheck.checked = false;
-      grayscaleVal = false;
-      updateEstimate();
-    });
-
     const compressBtn = el("button", { class: "btn btn--primary", type: "button" }, [
       el("span", { class: "material-symbols-outlined", "aria-hidden": "true" }, ["compress"]),
-      "Compress Document(s)"
+      "Hard Compress Document(s)"
     ]) as HTMLButtonElement;
 
     compressBtn.addEventListener("click", async () => {
@@ -442,17 +503,29 @@ const docCompressFeature: Feature = {
       ctx.busy.spin("Compressing document(s)…");
       try {
         const outFiles = [];
+        const targetLimit = targetSizeControls.getTargetBytes();
+
         for (let i = 0; i < activeDocs.length; i++) {
           const entry = activeDocs[i];
           ctx.busy.progress(i / activeDocs.length, `Compressing ${entry.file.name}…`);
-          let compressedBytes: Uint8Array;
+          
+          let curQuality = qualityVal;
+          let curDpi = Number(dpiSelect.value);
+          let outBlob: Blob = entry.file;
+
           if (entry.kind === "pdf") {
-            compressedBytes = await compressPdfBytes(entry.data, qualityVal, grayscaleVal);
+            for (let iter = 0; iter < 4; iter++) {
+              const compressedBytes = await compressPdfBytes(entry.data, curQuality, grayscaleVal, curDpi);
+              outBlob = blobFromBytes(compressedBytes, "application/pdf");
+              if (!targetLimit || outBlob.size <= targetLimit || curQuality <= 10) break;
+              curQuality = Math.max(10, Math.floor(curQuality * 0.7));
+              curDpi = Math.max(72, Math.floor(curDpi * 0.8));
+            }
           } else {
-            compressedBytes = entry.data.slice(0, Math.max(10, Math.floor(entry.data.length * (qualityVal / 100))));
+            const compressedBytes = entry.data.slice(0, Math.max(10, Math.floor(entry.data.length * (curQuality / 100))));
+            outBlob = blobFromBytes(compressedBytes, entry.mime || "application/octet-stream");
           }
 
-          const outBlob = blobFromBytes(compressedBytes, entry.mime || "application/pdf");
           const reduction = Math.round((1 - outBlob.size / entry.file.size) * 100);
           const reductionLabel = reduction > 0 ? `-${reduction}%` : "same size";
           const base = entry.file.name.replace(/\.[^/.]+$/, "");
@@ -461,9 +534,9 @@ const docCompressFeature: Feature = {
           outFiles.push({
             name: `${base}-compressed.${ext}`,
             blob: outBlob,
-            mime: entry.mime,
+            mime: entry.mime || "application/pdf",
             sourceFeatureId: "doc-compress",
-            sourceLabel: `Compressed (${reductionLabel})`
+            sourceLabel: `Hard Compressed (${reductionLabel})`
           });
         }
 
@@ -474,7 +547,7 @@ const docCompressFeature: Feature = {
           activeDocs.map((e) => e.file),
           `Compressed ${activeDocs.length} document(s)`
         );
-        toast("Document compression complete", "success");
+        toast("Document hard compression complete", "success");
       } catch (e) {
         toast(`Compression failed: ${e instanceof Error ? e.message : e}`, "error");
       } finally {
@@ -487,12 +560,12 @@ const docCompressFeature: Feature = {
 
     host.append(
       el("p", { class: "tool-desc" }, [
-        "Reduce document size with intelligent page downsampling, DPI target presets, and B&W grayscale conversion."
+        "Hard compress PDF & documents using page canvas re-encoding, DPI scaling, and target file size matching."
       ]),
       drop,
       fileListView.host,
       estimator.card,
-      el("div", { class: "compress-presets-grid" }, [presetBtnExtreme, presetBtnRec, presetBtnLow]),
+      targetSizeControls.container,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Resolution (DPI):"]),
         dpiSelect,
@@ -519,6 +592,7 @@ const imageCompressFeature: Feature = {
 
     const isImg = (e: CompressEntry) => e.kind === "image" || e.mime.startsWith("image/");
     const fileListView = createFileListView(isImg);
+    const targetSizeControls = createTargetSizeControls();
 
     const qualitySlider = el("input", {
       type: "range",
@@ -586,10 +660,24 @@ const imageCompressFeature: Feature = {
       ctx.busy.spin("Compressing image(s)…");
       try {
         const outFiles = [];
+        const targetLimit = targetSizeControls.getTargetBytes();
+
         for (let i = 0; i < activeImages.length; i++) {
           const imgEntry = activeImages[i];
           ctx.busy.progress(i / activeImages.length, `Compressing ${imgEntry.file.name}…`);
-          const res = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, qualityVal, scaleRatio);
+          
+          let curQuality = qualityVal;
+          let curScale = scaleRatio;
+          let res = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, curQuality, curScale);
+
+          if (targetLimit) {
+            for (let iter = 0; iter < 4; iter++) {
+              if (res.blob.size <= targetLimit || curQuality <= 0.1) break;
+              curQuality *= 0.75;
+              curScale *= 0.85;
+              res = await compressImageFile(imgEntry.file, targetMime || imgEntry.mime, curQuality, curScale);
+            }
+          }
 
           const reduction = Math.round((1 - res.blob.size / imgEntry.file.size) * 100);
           const reductionLabel = reduction > 0 ? `-${reduction}%` : "same size";
@@ -625,11 +713,12 @@ const imageCompressFeature: Feature = {
 
     host.append(
       el("p", { class: "tool-desc" }, [
-        "Compress images with WebP/AVIF local encoders, dimension scaling, and live size estimation."
+        "Compress images with WebP/AVIF local encoders, dimension scaling, and target file size limits."
       ]),
       drop,
       fileListView.host,
       estimator.card,
+      targetSizeControls.container,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Format:"]),
         formatSelect,
@@ -646,7 +735,7 @@ const imageCompressFeature: Feature = {
   }
 };
 
-// ── Feature 3: Audio Compressor (MP3, WAV, OGG, M4A, FLAC) ─────
+// ── Feature 3: Audio Compressor ────────────────────────────────
 const audioCompressFeature: Feature = {
   id: "audio-compress",
   label: "Compress Audio",
@@ -656,6 +745,7 @@ const audioCompressFeature: Feature = {
 
     const isAud = (e: CompressEntry) => e.kind === "audio" || e.mime.startsWith("audio/");
     const fileListView = createFileListView(isAud);
+    const targetSizeControls = createTargetSizeControls();
 
     const bitrateSelect = el("select", { class: "select" }, [
       el("option", { value: "128" }, ["128 kbps (Standard MP3 Quality)"]),
@@ -745,6 +835,7 @@ const audioCompressFeature: Feature = {
       drop,
       fileListView.host,
       estimator.card,
+      targetSizeControls.container,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Bitrate:"]),
         bitrateSelect,
@@ -757,7 +848,7 @@ const audioCompressFeature: Feature = {
   }
 };
 
-// ── Feature 4: Video Compressor (MP4, WEBM, MOV, AVI) ──────────
+// ── Feature 4: Video Compressor ────────────────────────────────
 const videoCompressFeature: Feature = {
   id: "video-compress",
   label: "Compress Video",
@@ -767,6 +858,7 @@ const videoCompressFeature: Feature = {
 
     const isVid = (e: CompressEntry) => e.kind === "video" || e.mime.startsWith("video/");
     const fileListView = createFileListView(isVid);
+    const targetSizeControls = createTargetSizeControls();
 
     const resSelect = el("select", { class: "select" }, [
       el("option", { value: "720" }, ["720p HD (Recommended)"]),
@@ -856,6 +948,7 @@ const videoCompressFeature: Feature = {
       drop,
       fileListView.host,
       estimator.card,
+      targetSizeControls.container,
       el("div", { class: "row gap-md align-center" }, [
         el("label", { class: "field-label" }, ["Target Resolution:"]),
         resSelect,

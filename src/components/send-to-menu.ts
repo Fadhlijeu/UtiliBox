@@ -99,7 +99,7 @@ export const createSendToMenu = (
         new CustomEvent(SAME_TOOL_EVENT, { detail: { featureId: t.featureId } })
       );
     } else {
-      location.hash = `#/tool/${t.toolId}`;
+      location.hash = `#/tool/${t.toolId}?feature=${t.featureId}`;
     }
   };
 

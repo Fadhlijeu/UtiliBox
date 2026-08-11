@@ -1,6 +1,6 @@
 import { el, clear } from "../lib/dom";
 import { busy, type Busy } from "./busy";
-import { OutputPanel, type OutputFile, CLOSE_RESULT_EVENT } from "./output-panel";
+import { OutputPanel, type OutputFile, CLOSE_RESULT_EVENT, SAME_TOOL_EVENT } from "./output-panel";
 import { timelineStore } from "../lib/timeline-store";
 import { toast } from "./toast";
 
@@ -98,7 +98,11 @@ export const ToolShell = (
     reset: clearAll
   };
 
-  let current = features[0]?.id ?? "";
+  const urlMatch = location.hash.match(/[?&]feature=([^&]+)/);
+  const requestedFeature = urlMatch ? decodeURIComponent(urlMatch[1]) : "";
+  let current = (requestedFeature && features.some((f) => f.id === requestedFeature))
+    ? requestedFeature
+    : (features[0]?.id ?? "");
 
   const mountFeature = (id: string) => {
     const feat = features.find((f) => f.id === id);
@@ -106,6 +110,20 @@ export const ToolShell = (
     clear(workspace);
     feat.mount(workspace, ctx);
   };
+
+  window.addEventListener(SAME_TOOL_EVENT, (e: Event) => {
+    const customEv = e as CustomEvent<{ featureId?: string }>;
+    if (customEv.detail?.featureId) {
+      const targetFeat = features.find((f) => f.id === customEv.detail.featureId);
+      if (targetFeat && targetFeat.id !== current) {
+        current = targetFeat.id;
+        tabs.querySelectorAll(".feature-tab").forEach((t) => {
+          t.setAttribute("aria-selected", t.getAttribute("data-feature") === current ? "true" : "false");
+        });
+        mountFeature(current);
+      }
+    }
+  });
 
   tabs.replaceChildren(
     ...features.map((f) => {

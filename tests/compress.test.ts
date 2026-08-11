@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { toolById } from "../src/config/tools";
 
-describe("Compress Tool Suite, Accept Filters & Estimators", () => {
+describe("Compress Tool Suite, Hard Compress Engine & Target Size Limits", () => {
   it("registers generic Compress tool in tool registry", () => {
     const meta = toolById("compress");
     expect(meta).toBeDefined();
@@ -17,23 +17,19 @@ describe("Compress Tool Suite, Accept Filters & Estimators", () => {
   });
 
   it("calculates document & image percentage size reduction correctly", () => {
-    const originalSize = 2000000; // 2 MB
-    const compressedSize = 500000; // 500 KB
+    const originalSize = 6000000; // 6 MB
+    const compressedSize = 900000; // 900 KB
     const reduction = Math.round((1 - compressedSize / originalSize) * 100);
-    expect(reduction).toBe(75);
+    expect(reduction).toBe(85);
   });
 
-  it("calculates audio bitrate reduction estimate", () => {
-    const originalBitrate = 320; // 320 kbps MP3
-    const targetBitrate = 128;   // 128 kbps MP3
-    const reduction = Math.round((1 - targetBitrate / originalBitrate) * 100);
-    expect(reduction).toBe(60);
-  });
+  it("parses target size bytes input accurately", () => {
+    const valueMb = 1.0;
+    const bytesMb = Math.round(valueMb * 1024 * 1024);
+    expect(bytesMb).toBe(1048576);
 
-  it("calculates video resolution scale reduction estimate", () => {
-    const originalHeight = 1080;
-    const targetHeight = 720;
-    const scaleRatio = targetHeight / originalHeight;
-    expect(scaleRatio).toBeCloseTo(0.666, 2);
+    const valueKb = 500;
+    const bytesKb = Math.round(valueKb * 1024);
+    expect(bytesKb).toBe(512000);
   });
 });
