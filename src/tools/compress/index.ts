@@ -246,7 +246,7 @@ const compressImageFile = async (
   });
 };
 
-// ── GIF Compression Helper (Dedicated Canvas Image Handler) ────
+// ── GIF Compression Helper (Preserves GIF format and extension) ─
 const compressGifFile = async (
   file: File,
   targetResHeight: number
@@ -274,12 +274,12 @@ const compressGifFile = async (
       canvas.toBlob(
         (blob) => {
           if (blob && blob.size <= file.size) {
-            resolve({ blob, mime: "image/webp" });
+            resolve({ blob, mime: "image/gif" });
           } else {
-            resolve({ blob: file, mime: file.type || "image/gif" });
+            resolve({ blob: file, mime: "image/gif" });
           }
         },
-        "image/webp",
+        "image/gif",
         0.75
       );
     };
@@ -1323,7 +1323,7 @@ const videoCompressFeature: Feature = {
           const reduction = Math.round((1 - res.blob.size / item.file.size) * 100);
           const reductionLabel = reduction > 0 ? `-${reduction}%` : "same size";
           const base = item.file.name.replace(/\.[^/.]+$/, "");
-          const ext = isGif ? (res.mime.split("/")[1] ?? "webp") : "webm";
+          const ext = isGif ? "gif" : "webm";
 
           outFiles.push({
             name: `${base}-compressed.${ext}`,
