@@ -743,7 +743,7 @@ function openPresetConfigModal(preset: PresetConfig, onSave: () => void) {
     type: "text",
     value: preset.name,
     class: "input",
-    style: "font-weight: 700; font-size: 13px;"
+    style: "font-weight: 700; font-size: 13px; width: 100%; height: 36px;"
   }) as HTMLInputElement;
 
   const tabQuality = el("button", {
@@ -762,7 +762,7 @@ function openPresetConfigModal(preset: PresetConfig, onSave: () => void) {
     "Target Size Match"
   ]);
 
-  const precisionSelect = el("select", { class: "select", style: "font-size: 11px;" }, [
+  const precisionSelect = el("select", { class: "select", style: "font-size: 11px; width: 100%; height: 34px;" }, [
     el("option", { value: "exact", selected: preset.precision === "exact" ? "selected" : undefined }, ["Exact Match (~100%)"]),
     el("option", { value: "approx", selected: preset.precision === "approx" ? "selected" : undefined }, ["Approx (Max Ceiling)"])
   ]) as HTMLSelectElement;
@@ -773,10 +773,10 @@ function openPresetConfigModal(preset: PresetConfig, onSave: () => void) {
     step: "0.1",
     value: String(preset.targetVal),
     class: "input",
-    style: "width: 75px; font-weight: 700; font-family: var(--font-mono); font-size: 12px;"
+    style: "width: 75px; font-weight: 700; font-family: var(--font-mono); font-size: 12px; height: 34px;"
   }) as HTMLInputElement;
 
-  const unitSelect = el("select", { class: "select", style: "font-weight: 700; font-size: 11px;" }, [
+  const unitSelect = el("select", { class: "select", style: "font-weight: 700; font-size: 11px; height: 34px;" }, [
     el("option", { value: "MB", selected: preset.targetUnit === "MB" ? "selected" : undefined }, ["MB"]),
     el("option", { value: "KB", selected: preset.targetUnit === "KB" ? "selected" : undefined }, ["KB"])
   ]) as HTMLSelectElement;
@@ -795,12 +795,12 @@ function openPresetConfigModal(preset: PresetConfig, onSave: () => void) {
     qualityValueLabel.textContent = `${qualityInput.value}% Quality`;
   });
 
-  const targetSection = el("div", { class: "row gap-md align-center", style: "transition: opacity 0.2s; margin: 0;" }, [
-    el("div", { class: "column gap-2xs", style: "flex: 1;" }, [
+  const targetSection = el("div", { style: "display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; margin: 0; transition: opacity 0.2s;" }, [
+    el("div", { class: "column gap-2xs" }, [
       el("label", { class: "field-label text-2xs" }, ["Target Size:"]),
-      el("div", { class: "row gap-xs align-center", style: "margin: 0;" }, [targetInput, unitSelect])
+      el("div", { style: "display: flex; align-items: center; gap: 6px; margin: 0;" }, [targetInput, unitSelect])
     ]),
-    el("div", { class: "column gap-2xs", style: "flex: 1;" }, [
+    el("div", { class: "column gap-2xs" }, [
       el("label", { class: "field-label text-2xs" }, ["Match Precision:"]),
       precisionSelect
     ])
