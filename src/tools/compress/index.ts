@@ -1206,13 +1206,14 @@ const docCompressFeature: Feature = {
       ])
     ]);
 
-    const dashboard = el("div", { class: "compress-single-column-layout column gap-md" }, [
-      drop,
+    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
+    const rightPanel = el("div", { class: "compress-panel-right" }, [
       presetManager.host,
       globalCard,
-      fileListView.host,
       compressBtn
     ]);
+
+    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
@@ -1428,13 +1429,14 @@ const imageCompressFeature: Feature = {
       ])
     ]);
 
-    const dashboard = el("div", { class: "compress-single-column-layout column gap-md" }, [
-      drop,
+    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
+    const rightPanel = el("div", { class: "compress-panel-right" }, [
       presetManager.host,
       globalCard,
-      fileListView.host,
       compressBtn
     ]);
+
+    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
@@ -1598,13 +1600,14 @@ const audioCompressFeature: Feature = {
       ])
     ]);
 
-    const dashboard = el("div", { class: "compress-single-column-layout column gap-md" }, [
-      drop,
+    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
+    const rightPanel = el("div", { class: "compress-panel-right" }, [
       presetManager.host,
       globalCard,
-      fileListView.host,
       compressBtn
     ]);
+
+    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
@@ -1772,13 +1775,14 @@ const videoCompressFeature: Feature = {
       ])
     ]);
 
-    const dashboard = el("div", { class: "compress-single-column-layout column gap-md" }, [
-      drop,
+    const leftPanel = el("div", { class: "compress-panel-left" }, [drop, fileListView.host]);
+    const rightPanel = el("div", { class: "compress-panel-right" }, [
       presetManager.host,
       globalCard,
-      fileListView.host,
       compressBtn
     ]);
+
+    const dashboard = el("div", { class: "compress-dashboard-grid" }, [leftPanel, rightPanel]);
 
     host.append(
       el("p", { class: "tool-desc text-xs" }, [
