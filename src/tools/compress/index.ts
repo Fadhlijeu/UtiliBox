@@ -46,7 +46,82 @@ export interface CompressEntry {
 
 const entries: CompressEntry[] = [];
 const presets: PresetConfig[] = [];
-let nextPresetNumber = 1;
+
+export const getNextPresetName = (existingPresets: PresetConfig[] = presets): string => {
+  const existingNums = existingPresets
+    .map((p) => {
+      const match = p.name.match(/Preset #(\d+)/i);
+      return match ? parseInt(match[1], 10) : 0;
+    })
+    .filter((n) => n > 0);
+
+  let candidate = 1;
+  while (existingNums.includes(candidate)) {
+    candidate++;
+  }
+  return `Preset #${candidate}`;
+};
+
+export const calculateEstimateForEntries = (
+  activeEntries: CompressEntry[],
+  allPresets: PresetConfig[],
+  globalMode: CompressMode,
+  globalQualityVal: number,
+  globalTargetBytes: number | undefined,
+  grayscaleVal: boolean = false
+): { originalBytes: number; estimatedBytes: number } => {
+  let originalBytes = 0;
+  let estimatedBytes = 0;
+
+  for (const e of activeEntries) {
+    const size = e.file.size;
+    originalBytes += size;
+
+    const assignedPreset = e.presetId ? allPresets.find((p) => p.id === e.presetId) : undefined;
+    const mode = assignedPreset ? assignedPreset.mode : globalMode;
+
+    if (mode === "target-size") {
+      const limit = assignedPreset
+        ? (assignedPreset.targetUnit === "MB" ? assignedPreset.targetVal * 1024 * 1024 : assignedPreset.targetVal * 1024)
+        : globalTargetBytes;
+
+      if (limit && limit > 0) {
+        if (size <= limit) {
+          estimatedBytes += size;
+        } else {
+          if (assignedPreset?.precision === "approx") {
+            estimatedBytes += Math.round(limit * 0.85);
+          } else {
+            estimatedBytes += Math.round(limit * 0.95);
+          }
+        }
+      } else {
+        estimatedBytes += Math.round(size * 0.5);
+      }
+    } else {
+      const quality = assignedPreset ? assignedPreset.qualityVal : globalQualityVal;
+      const q = quality / 100;
+      let factor = 0.15 + q * 0.65;
+      if (grayscaleVal) factor *= 0.8;
+
+      if (e.kind === "pdf") {
+        const est = Math.max(50 * 1024, Math.round(size * factor));
+        estimatedBytes += Math.min(size, est);
+      } else if (e.kind === "image") {
+        const est = Math.max(10 * 1024, Math.round(size * (0.1 + q * 0.7)));
+        estimatedBytes += Math.min(size, est);
+      } else if (e.kind === "audio") {
+        const est = Math.max(20 * 1024, Math.round(size * (0.2 + q * 0.6)));
+        estimatedBytes += Math.min(size, est);
+      } else {
+        const est = Math.max(100 * 1024, Math.round(size * (0.25 + q * 0.6)));
+        estimatedBytes += Math.min(size, est);
+      }
+    }
+  }
+
+  return { originalBytes, estimatedBytes };
+};
 
 let notifyActivity: (() => void) | null = null;
 const fileChangeListeners: Array<() => void> = [];
@@ -175,6 +250,31 @@ const compressPdfCanvas = async (
   }
 };
 
+const compressPdfQualityRatio = async (
+  pdfBytes: Uint8Array,
+  qualityPercent: number,
+  grayscale: boolean,
+  userDpi: number = 150
+): Promise<Uint8Array> => {
+  const originalSize = pdfBytes.length;
+  const targetBytes = Math.round(originalSize * (qualityPercent / 100));
+
+  const structural = await compressPdfStructural(pdfBytes);
+  if (structural.length <= targetBytes) {
+    return structural;
+  }
+
+  let dpi = userDpi;
+  if (originalSize > 20 * 1024 * 1024) {
+    dpi = Math.max(180, Math.round(userDpi * 1.6));
+  } else if (originalSize > 5 * 1024 * 1024) {
+    dpi = Math.max(140, Math.round(userDpi * 1.25));
+  }
+
+  const candidate = await compressPdfCanvas(pdfBytes, qualityPercent, grayscale, dpi);
+  return candidate.length < originalSize ? candidate : pdfBytes;
+};
+
 // ── Target Match Engine (PDF) ───────────────────────────────────
 const compressPdfTargetMatch = async (
   pdfBytes: Uint8Array,
@@ -187,44 +287,50 @@ const compressPdfTargetMatch = async (
     return structural;
   }
 
-  let minQ = 10;
-  let maxQ = 95;
-  let bestBytes = structural;
-  let bestDiff = Infinity;
+  const dpiTiers = [300, 225, 175, 150, 120, 90, 72];
+  let bestBytes = pdfBytes;
+  let bestSize = Infinity;
+  let closestUnderTarget: Uint8Array | null = null;
+  let closestUnderTargetDiff = Infinity;
 
-  const lowQualityFallback = await compressPdfCanvas(pdfBytes, 15, grayscale, 72);
-  if (lowQualityFallback.length > pdfBytes.length) {
-    return pdfBytes;
-  }
+  for (const dpi of dpiTiers) {
+    let minQ = 15;
+    let maxQ = 92;
 
-  for (let step = 0; step < 5; step++) {
-    const midQ = Math.round((minQ + maxQ) / 2);
-    const candidate = await compressPdfCanvas(pdfBytes, midQ, grayscale, midQ > 50 ? 150 : 100);
-    const candidateSize = candidate.length;
+    for (let step = 0; step < 4; step++) {
+      const midQ = Math.round((minQ + maxQ) / 2);
+      const candidate = await compressPdfCanvas(pdfBytes, midQ, grayscale, dpi);
+      const candidateSize = candidate.length;
 
-    if (candidateSize <= targetBytes) {
-      const diff = targetBytes - candidateSize;
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        bestBytes = candidate;
+      if (candidateSize <= targetBytes) {
+        const diff = targetBytes - candidateSize;
+        if (diff < closestUnderTargetDiff) {
+          closestUnderTargetDiff = diff;
+          closestUnderTarget = candidate;
+        }
+        if (precision === "exact" && diff < targetBytes * 0.05) {
+          return candidate;
+        }
+        minQ = midQ + 1;
+      } else {
+        if (candidateSize < bestSize) {
+          bestSize = candidateSize;
+          bestBytes = candidate;
+        }
+        maxQ = midQ - 1;
       }
-      if (precision === "exact" && diff < targetBytes * 0.05) {
-        break;
-      }
-      minQ = midQ + 1;
-    } else {
-      maxQ = midQ - 1;
+    }
+
+    if (closestUnderTarget && closestUnderTargetDiff <= targetBytes * 0.25) {
+      return closestUnderTarget;
     }
   }
 
-  if (bestBytes.length > targetBytes && precision === "exact") {
-    const compactAttempt = await compressPdfCanvas(pdfBytes, 20, grayscale, 72);
-    if (compactAttempt.length <= targetBytes) {
-      bestBytes = compactAttempt;
-    }
+  if (closestUnderTarget) {
+    return closestUnderTarget;
   }
 
-  return bestBytes.length <= pdfBytes.length ? bestBytes : pdfBytes;
+  return bestBytes.length < pdfBytes.length ? bestBytes : pdfBytes;
 };
 
 // ── Engine 3: Image Compressor ──────────────────────────────────
@@ -907,8 +1013,8 @@ const createPresetManager = (
 
     addBtn.addEventListener("click", () => {
       const newPreset: PresetConfig = {
-        id: `preset-${Date.now()}`,
-        name: `Preset #${nextPresetNumber++}`,
+        id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: getNextPresetName(),
         mode: "target-size",
         qualityVal: 65,
         targetVal: 1.0,
@@ -1150,13 +1256,15 @@ const docCompressFeature: Feature = {
 
     const updateEstimate = (_mode?: CompressMode) => {
       const activeDocs = entries.filter(isDoc);
-      const bytes = activeDocs.reduce((acc, e) => acc + e.file.size, 0);
-      const targetLimit = modeControl.getTargetBytes();
-      let ratio = (1 - qualityVal / 100) * 0.65 + (grayscaleVal ? 0.15 : 0);
-      if (modeControl.getMode() === "target-size" && targetLimit && bytes > 0 && targetLimit < bytes) {
-        ratio = Math.max(ratio, 1 - targetLimit / bytes);
-      }
-      estimator.update(bytes, Math.min(0.92, Math.max(0.1, ratio)));
+      const est = calculateEstimateForEntries(
+        activeDocs,
+        presets,
+        modeControl.getMode(),
+        qualityVal,
+        modeControl.getTargetBytes(),
+        grayscaleVal
+      );
+      estimator.update(est.originalBytes, est.estimatedBytes);
       presetManager.render();
       fileListView.render();
     };
@@ -1207,7 +1315,7 @@ const docCompressFeature: Feature = {
               const exactBytes = await compressPdfTargetMatch(entry.data, effectiveTargetLimit, grayscaleVal, effectivePrecision);
               outBlob = blobFromBytes(exactBytes, "application/pdf");
             } else {
-              const compressedBytes = await compressPdfCanvas(entry.data, effectiveQuality, grayscaleVal, Number(dpiSelect.value));
+              const compressedBytes = await compressPdfQualityRatio(entry.data, effectiveQuality, grayscaleVal, Number(dpiSelect.value));
               outBlob = blobFromBytes(compressedBytes, "application/pdf");
             }
           } else {
@@ -1396,13 +1504,15 @@ const imageCompressFeature: Feature = {
 
     const updateEstimate = (_mode?: CompressMode) => {
       const activeImgs = entries.filter(isImg);
-      const bytes = activeImgs.reduce((acc, e) => acc + e.file.size, 0);
-      let ratio = (1 - qualityVal) * 0.6 + (1 - scaleRatio) * 0.4 + (targetMime === "image/webp" ? 0.2 : 0);
-      const targetLimit = modeControl.getTargetBytes();
-      if (modeControl.getMode() === "target-size" && targetLimit && bytes > 0 && targetLimit < bytes) {
-        ratio = Math.max(ratio, 1 - targetLimit / bytes);
-      }
-      estimator.update(bytes, Math.min(0.92, Math.max(0.1, ratio)));
+      const est = calculateEstimateForEntries(
+        activeImgs,
+        presets,
+        modeControl.getMode(),
+        Math.round(qualityVal * 100),
+        modeControl.getTargetBytes(),
+        false
+      );
+      estimator.update(est.originalBytes, est.estimatedBytes);
       presetManager.render();
       fileListView.render();
     };
@@ -1604,13 +1714,15 @@ const audioCompressFeature: Feature = {
 
     const updateEstimate = (_mode?: CompressMode) => {
       const activeAuds = entries.filter(isAud);
-      const bytes = activeAuds.reduce((acc, e) => acc + e.file.size, 0);
-      let ratio = (1 - bitrateKbps / 320) * 0.6 + (toMono ? 0.3 : 0);
-      const targetLimit = modeControl.getTargetBytes();
-      if (modeControl.getMode() === "target-size" && targetLimit && bytes > 0 && targetLimit < bytes) {
-        ratio = Math.max(ratio, 1 - targetLimit / bytes);
-      }
-      estimator.update(bytes, Math.min(0.88, ratio));
+      const est = calculateEstimateForEntries(
+        activeAuds,
+        presets,
+        modeControl.getMode(),
+        Math.round((bitrateKbps / 192) * 65),
+        modeControl.getTargetBytes(),
+        false
+      );
+      estimator.update(est.originalBytes, est.estimatedBytes);
       presetManager.render();
       fileListView.render();
     };
@@ -1795,13 +1907,15 @@ const videoCompressFeature: Feature = {
 
     const updateEstimate = (_mode?: CompressMode) => {
       const activeVids = entries.filter(isVid);
-      const bytes = activeVids.reduce((acc, e) => acc + e.file.size, 0);
-      let ratio = (1 - resHeight / 1080) * 0.6 + (muteAudio ? 0.2 : 0);
-      const targetLimit = modeControl.getTargetBytes();
-      if (modeControl.getMode() === "target-size" && targetLimit && bytes > 0 && targetLimit < bytes) {
-        ratio = Math.max(ratio, 1 - targetLimit / bytes);
-      }
-      estimator.update(bytes, Math.min(0.85, Math.max(0.2, ratio)));
+      const est = calculateEstimateForEntries(
+        activeVids,
+        presets,
+        modeControl.getMode(),
+        Math.round((resHeight / 1080) * 65),
+        modeControl.getTargetBytes(),
+        false
+      );
+      estimator.update(est.originalBytes, est.estimatedBytes);
       presetManager.render();
       fileListView.render();
     };
