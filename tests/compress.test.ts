@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { toolById } from "../src/config/tools";
-import { getNextPresetName, calculateEstimateForEntries } from "../src/tools/compress/index";
+import { getNextPresetName, calculateEstimateForEntries, calculateProportionalTarget } from "../src/tools/compress/index";
 
 describe("Compress Tool Suite, Hard Compress Engine & Target Size Limits", () => {
   it("registers generic Compress tool in tool registry", () => {
@@ -76,5 +76,21 @@ describe("Compress Tool Suite, Hard Compress Engine & Target Size Limits", () =>
     // File 3 (10MB in Global 15MB) -> 10MB (file is smaller than 15MB target ceiling, stays 10MB!)
     expect(est.estimatedBytes).toBeLessThan(26 * 1024 * 1024);
     expect(est.estimatedBytes).toBeGreaterThan(24 * 1024 * 1024);
+  });
+
+  it("calculates proportional target allocation for batch files", () => {
+    const file50MB = 50 * 1024 * 1024;
+    const file20MB = 20 * 1024 * 1024;
+    const file10MB = 10 * 1024 * 1024;
+    const totalBatch = 80 * 1024 * 1024;
+    const totalTarget = 20 * 1024 * 1024;
+
+    const target50 = calculateProportionalTarget(file50MB, totalBatch, totalTarget, "proportional");
+    const target20 = calculateProportionalTarget(file20MB, totalBatch, totalTarget, "proportional");
+    const target10 = calculateProportionalTarget(file10MB, totalBatch, totalTarget, "proportional");
+
+    expect(target50).toBe(Math.round(12.5 * 1024 * 1024));
+    expect(target20).toBe(Math.round(5.0 * 1024 * 1024));
+    expect(target10).toBe(Math.round(2.5 * 1024 * 1024));
   });
 });

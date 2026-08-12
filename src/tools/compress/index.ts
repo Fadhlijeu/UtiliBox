@@ -24,6 +24,7 @@ const getPdfJs = (): Promise<typeof import("pdfjs-dist")> => {
 
 export type CompressMode = "quality" | "target-size";
 export type TargetPrecision = "exact" | "approx";
+export type BatchTargetStrategy = "per-file" | "proportional";
 
 export interface PresetConfig {
   id: string;
@@ -47,6 +48,27 @@ export interface CompressEntry {
 const entries: CompressEntry[] = [];
 const presets: PresetConfig[] = [];
 
+const fileExtension = (fileName: string, fallback = "bin"): string =>
+  fileName.includes(".") ? fileName.split(".").pop() ?? fallback : fallback;
+
+const baseName = (fileName: string): string => fileName.replace(/\.[^/.]+$/, "");
+
+const safeDocumentBlob = (entry: CompressEntry): Blob =>
+  new Blob([entry.data.slice()], { type: entry.mime || "application/octet-stream" });
+
+export const calculateProportionalTarget = (
+  fileSize: number,
+  totalBatchSize: number,
+  totalTargetBytes: number,
+  strategy: BatchTargetStrategy = "per-file"
+): number => {
+  if (strategy === "per-file" || totalBatchSize <= 0 || totalTargetBytes <= 0) {
+    return totalTargetBytes;
+  }
+  const shareRatio = fileSize / totalBatchSize;
+  return Math.max(10 * 1024, Math.round(totalTargetBytes * shareRatio));
+};
+
 export const getNextPresetName = (existingPresets: PresetConfig[] = presets): string => {
   const existingNums = existingPresets
     .map((p) => {
@@ -68,10 +90,12 @@ export const calculateEstimateForEntries = (
   globalMode: CompressMode,
   globalQualityVal: number,
   globalTargetBytes: number | null | undefined,
-  grayscaleVal: boolean = false
+  grayscaleVal: boolean = false,
+  targetStrategy: BatchTargetStrategy = "per-file"
 ): { originalBytes: number; estimatedBytes: number } => {
   let originalBytes = 0;
   let estimatedBytes = 0;
+  const totalBatchSize = activeEntries.reduce((acc, e) => acc + e.file.size, 0);
 
   for (const e of activeEntries) {
     const size = e.file.size;
@@ -81,9 +105,13 @@ export const calculateEstimateForEntries = (
     const mode = assignedPreset ? assignedPreset.mode : globalMode;
 
     if (mode === "target-size") {
+      const rawGlobalLimit = globalTargetBytes && globalTargetBytes > 0
+        ? calculateProportionalTarget(size, totalBatchSize, globalTargetBytes, targetStrategy)
+        : undefined;
+
       const limit = assignedPreset
         ? (assignedPreset.targetUnit === "MB" ? assignedPreset.targetVal * 1024 * 1024 : assignedPreset.targetVal * 1024)
-        : globalTargetBytes;
+        : rawGlobalLimit;
 
       if (limit && limit > 0) {
         if (size <= limit) {
@@ -198,7 +226,8 @@ const compressPdfCanvas = async (
   pdfBytes: Uint8Array,
   qualityPercent: number,
   grayscale: boolean,
-  dpi: number = 150
+  dpi: number = 150,
+  onProgress?: (pageNum: number, totalPages: number) => void
 ): Promise<Uint8Array> => {
   try {
     const pdfjs = await getPdfJs();
@@ -209,6 +238,9 @@ const compressPdfCanvas = async (
     const renderScale = Math.max(1.2, dpi / 72);
 
     for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
+      if (onProgress) {
+        try { onProgress(pageNum, pageCount); } catch { /* ignore */ }
+      }
       const page = await pdfDoc.getPage(pageNum);
       const viewport = page.getViewport({ scale: renderScale });
       const canvas = document.createElement("canvas");
@@ -254,7 +286,8 @@ const compressPdfQualityRatio = async (
   pdfBytes: Uint8Array,
   qualityPercent: number,
   grayscale: boolean,
-  userDpi: number = 150
+  userDpi: number = 150,
+  onProgress?: (pageNum: number, totalPages: number) => void
 ): Promise<Uint8Array> => {
   const originalSize = pdfBytes.length;
   const targetBytes = Math.round(originalSize * (qualityPercent / 100));
@@ -271,7 +304,7 @@ const compressPdfQualityRatio = async (
     dpi = Math.max(140, Math.round(userDpi * 1.25));
   }
 
-  const candidate = await compressPdfCanvas(pdfBytes, qualityPercent, grayscale, dpi);
+  const candidate = await compressPdfCanvas(pdfBytes, qualityPercent, grayscale, dpi, onProgress);
   return candidate.length < originalSize ? candidate : pdfBytes;
 };
 
@@ -280,7 +313,8 @@ const compressPdfTargetMatch = async (
   pdfBytes: Uint8Array,
   targetBytes: number,
   grayscale: boolean,
-  precision: TargetPrecision = "exact"
+  precision: TargetPrecision = "exact",
+  onProgress?: (pageNum: number, totalPages: number) => void
 ): Promise<Uint8Array> => {
   const structural = await compressPdfStructural(pdfBytes);
   if (structural.length <= targetBytes) {
@@ -299,7 +333,7 @@ const compressPdfTargetMatch = async (
 
     for (let step = 0; step < 4; step++) {
       const midQ = Math.round((minQ + maxQ) / 2);
-      const candidate = await compressPdfCanvas(pdfBytes, midQ, grayscale, dpi);
+      const candidate = await compressPdfCanvas(pdfBytes, midQ, grayscale, dpi, onProgress);
       const candidateSize = candidate.length;
 
       if (candidateSize <= targetBytes) {
@@ -426,37 +460,38 @@ const compressAudioFile = async (
   const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
   const numberOfChannels = toMono ? 1 : audioBuffer.numberOfChannels;
-  const sampleRate = audioBuffer.sampleRate;
-  const length = audioBuffer.length;
+  const sampleRate = Math.min(
+    audioBuffer.sampleRate,
+    bitrateKbps <= 64 ? 22050 : bitrateKbps <= 96 ? 32000 : 44100
+  );
+  const length = Math.max(1, Math.round(audioBuffer.duration * sampleRate));
   const offlineCtx = new OfflineAudioContext(numberOfChannels, length, sampleRate);
 
-  const source = offlineCtx.createBufferSource();
-  source.buffer = audioBuffer;
-
   if (toMono && audioBuffer.numberOfChannels > 1) {
-    const merger = offlineCtx.createChannelMerger(1);
-    const left = offlineCtx.createBufferSource();
-    left.buffer = audioBuffer;
-    source.connect(merger, 0, 0);
-    merger.connect(offlineCtx.destination);
-  } else {
+    const monoBuffer = offlineCtx.createBuffer(1, audioBuffer.length, audioBuffer.sampleRate);
+    const mono = monoBuffer.getChannelData(0);
+    for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+      const input = audioBuffer.getChannelData(channel);
+      for (let i = 0; i < input.length; i++) mono[i] += input[i] / audioBuffer.numberOfChannels;
+    }
+    const source = offlineCtx.createBufferSource();
+    source.buffer = monoBuffer;
     source.connect(offlineCtx.destination);
+    source.start();
+  } else {
+    const source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(offlineCtx.destination);
+    source.start();
   }
 
-  source.start();
   const renderedBuffer = await offlineCtx.startRendering();
   void audioCtx.close();
 
   const wavBlob = audioBufferToWavBlob(renderedBuffer);
-  const ratio = Math.max(0.1, bitrateKbps / 320);
-  const slicedBytes = new Uint8Array(await wavBlob.arrayBuffer()).slice(
-    0,
-    Math.max(100, Math.floor(wavBlob.size * ratio))
-  );
-
   return {
-    blob: new Blob([slicedBytes], { type: "audio/mp3" }),
-    mime: "audio/mp3"
+    blob: wavBlob.size <= file.size ? wavBlob : file,
+    mime: wavBlob.size <= file.size ? "audio/wav" : (file.type || "application/octet-stream")
   };
 };
 
@@ -679,10 +714,12 @@ const createModeControl = (
   getMode: () => CompressMode;
   getTargetBytes: () => number | null;
   getTargetPrecision: () => TargetPrecision;
+  getTargetStrategy: () => BatchTargetStrategy;
   setDisabledState: (elementsToDisable: HTMLElement[]) => void;
 } => {
   let activeMode: CompressMode = "quality";
   let activePrecision: TargetPrecision = "exact";
+  let activeStrategy: BatchTargetStrategy = "per-file";
 
   const pillQuality = el("div", { class: "compress-mode-pill compress-mode-pill--active" }, [
     el("span", { class: "material-symbols-outlined text-xs" }, ["tune"]),
@@ -713,6 +750,28 @@ const createModeControl = (
     activePrecision = "approx";
     pillApprox.classList.add("compress-precision-pill--active");
     pillExact.classList.remove("compress-precision-pill--active");
+    onModeChange("target-size");
+  });
+
+  const pillPerFile = el("div", { class: "compress-precision-pill compress-precision-pill--active", title: "Target cap applied per file individually" }, ["Fixed Per-File Cap"]);
+  const pillProportional = el("div", { class: "compress-precision-pill", title: "Distribute total budget proportionally across batch" }, ["Proportional Share"]);
+
+  const strategyToggle = el("div", { class: "compress-precision-toggle", style: "opacity: 0.35; pointer-events: none;" }, [
+    pillPerFile,
+    pillProportional
+  ]);
+
+  pillPerFile.addEventListener("click", () => {
+    activeStrategy = "per-file";
+    pillPerFile.classList.add("compress-precision-pill--active");
+    pillProportional.classList.remove("compress-precision-pill--active");
+    onModeChange("target-size");
+  });
+
+  pillProportional.addEventListener("click", () => {
+    activeStrategy = "proportional";
+    pillProportional.classList.add("compress-precision-pill--active");
+    pillPerFile.classList.remove("compress-precision-pill--active");
     onModeChange("target-size");
   });
 
@@ -762,6 +821,8 @@ const createModeControl = (
 
     precisionToggle.style.opacity = isTarget ? "1" : "0.35";
     precisionToggle.style.pointerEvents = isTarget ? "auto" : "none";
+    strategyToggle.style.opacity = isTarget ? "1" : "0.35";
+    strategyToggle.style.pointerEvents = isTarget ? "auto" : "none";
   };
 
   pillQuality.addEventListener("click", () => {
@@ -818,6 +879,10 @@ const createModeControl = (
       precisionToggle,
       targetInputGroup
     ]),
+    el("div", { class: "row align-center justify-between gap-xs", style: "padding: 2px 0;" }, [
+      el("span", { class: "field-label text-2xs", style: "margin: 0;" }, ["Multi-File Strategy:"]),
+      strategyToggle
+    ]),
     quickPillsRow
   ]);
 
@@ -830,13 +895,14 @@ const createModeControl = (
   };
 
   const getTargetPrecision = (): TargetPrecision => activePrecision;
+  const getTargetStrategy = (): BatchTargetStrategy => activeStrategy;
 
   const setDisabledState = (elements: HTMLElement[]) => {
     qualityElements = elements;
     updateState(activeMode);
   };
 
-  return { container, getMode, getTargetBytes, getTargetPrecision, setDisabledState };
+  return { container, getMode, getTargetBytes, getTargetPrecision, getTargetStrategy, setDisabledState };
 };
 
 // ── Component: Preset Config Modal ─────────────────────────────
@@ -1100,7 +1166,10 @@ const createPresetManager = (
 };
 
 // ── Component: File List View ──────────────────────────────────
-const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: HTMLElement; render: () => void } => {
+const createFileListView = (
+  filterKind: (e: CompressEntry) => boolean,
+  getGlobalState?: () => { mode: CompressMode; qualityVal: number; targetBytes: number | null; grayscaleVal?: boolean; strategy?: BatchTargetStrategy }
+): { host: HTMLElement; render: () => void } => {
   const host = el("div", { class: "file-list-container" });
 
   const render = () => {
@@ -1126,14 +1195,16 @@ const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: 
     const header = el("div", { class: "file-list-header" }, [
       el("span", { class: "file-list-title" }, [
         el("span", { class: "material-symbols-outlined text-xs" }, ["folder_open"]),
-        `Staged Media (${filtered.length})`
+        `Staged Media Workspace (${filtered.length})`
       ]),
       clearAllBtn
     ]);
 
+    const state = getGlobalState?.() || { mode: "quality", qualityVal: 65, targetBytes: null };
+
     const list = el(
       "ul",
-      { class: "file-list", style: "max-height: 240px; overflow-y: auto; gap: 2px;" },
+      { class: "file-list", style: "max-height: 260px; overflow-y: auto; gap: 2px;" },
       filtered.map((e) => {
         const origIndex = entries.indexOf(e);
         const iconName = e.kind === "pdf" ? "picture_as_pdf" : e.kind === "image" ? "image" : e.kind === "audio" ? "graphic_eq" : e.kind === "video" ? "movie" : "description";
@@ -1152,7 +1223,7 @@ const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: 
 
         const presetSelect = el("select", {
           class: "select",
-          style: "font-size: 10px; padding: 1px 4px; max-width: 150px;"
+          style: "font-size: 10px; padding: 1px 4px; max-width: 140px;"
         }, presetOptions) as HTMLSelectElement;
 
         presetSelect.addEventListener("change", () => {
@@ -1160,13 +1231,22 @@ const createFileListView = (filterKind: (e: CompressEntry) => boolean): { host: 
           notifyFileChange();
         });
 
-        return el("li", { class: "file-item", style: "padding: 4px 8px; border-bottom: 1px solid var(--color-border-subtle); display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0;" }, [
+        const itemEst = calculateEstimateForEntries([e], presets, state.mode, state.qualityVal, state.targetBytes, state.grayscaleVal, state.strategy || "per-file");
+        const saved = Math.max(0, e.file.size - itemEst.estimatedBytes);
+        const pct = Math.min(99, Math.max(0, Math.round((saved / e.file.size) * 100)));
+
+        const estTag = el("span", { class: "compress-value-badge", style: "font-size: 10px; padding: 1px 6px; font-weight: 700; font-family: var(--font-mono);" }, [
+          `~${formatBytes(itemEst.estimatedBytes)} (-${pct}%)`
+        ]);
+
+        return el("li", { class: "file-item", style: "padding: 4px 8px; border-bottom: 1px solid var(--color-border-subtle); display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; background: var(--color-paper-1);" }, [
           el("div", { style: "display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin: 0;" }, [
             el("span", { class: "material-symbols-outlined text-xs" }, [iconName]),
-            el("span", { class: "file-name text-xs", title: e.file.name, style: "overflow: hidden; text-overflow: ellipsis;" }, [e.file.name]),
-            el("span", { class: "muted text-2xs" }, [formatBytes(e.file.size)])
+            el("span", { class: "file-name text-xs", title: e.file.name, style: "overflow: hidden; text-overflow: ellipsis; font-weight: 600;" }, [e.file.name]),
+            el("span", { class: "muted text-2xs" }, [`(${formatBytes(e.file.size)})`])
           ]),
           el("div", { style: "display: flex; align-items: center; gap: 6px; margin: 0;" }, [
+            estTag,
             presetSelect,
             removeBtn
           ])
@@ -1188,7 +1268,18 @@ const docCompressFeature: Feature = {
     let grayscaleVal = false;
 
     const isDoc = (e: CompressEntry) => e.kind === "pdf" || e.kind === "doc";
-    const fileListView = createFileListView(isDoc);
+
+    const modeControl = createModeControl("doc", (mode) => {
+      updateEstimate(mode);
+    });
+
+    const fileListView = createFileListView(isDoc, () => ({
+      mode: modeControl.getMode(),
+      qualityVal,
+      targetBytes: modeControl.getTargetBytes(),
+      grayscaleVal,
+      strategy: modeControl.getTargetStrategy()
+    }));
 
     const qualitySlider = el("input", {
       type: "range",
@@ -1214,10 +1305,6 @@ const docCompressFeature: Feature = {
     const docs = entries.filter(isDoc);
     const totalBytes = docs.reduce((acc, e) => acc + e.file.size, 0);
     const estimator = createEstimatorCard(totalBytes, 0.75);
-
-    const modeControl = createModeControl("doc", (mode) => {
-      updateEstimate(mode);
-    });
 
     const presetManager = createPresetManager(isDoc, () => updateEstimate());
 
@@ -1262,7 +1349,8 @@ const docCompressFeature: Feature = {
         modeControl.getMode(),
         qualityVal,
         modeControl.getTargetBytes(),
-        grayscaleVal
+        grayscaleVal,
+        modeControl.getTargetStrategy()
       );
       estimator.update(est.originalBytes, est.estimatedBytes);
       presetManager.render();
@@ -1319,21 +1407,20 @@ const docCompressFeature: Feature = {
               outBlob = blobFromBytes(compressedBytes, "application/pdf");
             }
           } else {
-            const compressedBytes = entry.data.slice(0, Math.max(10, Math.floor(entry.data.length * (effectiveQuality / 100))));
-            outBlob = blobFromBytes(compressedBytes, entry.mime || "application/octet-stream");
+            outBlob = safeDocumentBlob(entry);
           }
 
           const reduction = Math.round((1 - outBlob.size / entry.file.size) * 100);
           const reductionLabel = reduction > 0 ? `-${reduction}%` : "same size";
-          const base = entry.file.name.replace(/\.[^/.]+$/, "");
-          const ext = entry.file.name.split(".").pop() ?? "pdf";
+          const safeLabel = entry.kind === "pdf" ? reductionLabel : "kept safe";
+          const ext = fileExtension(entry.file.name, "pdf");
 
           outFiles.push({
-            name: `${base}-compressed.${ext}`,
+            name: `${baseName(entry.file.name)}-${entry.kind === "pdf" ? "compressed" : "safe-copy"}.${ext}`,
             blob: outBlob,
             mime: entry.mime || "application/pdf",
             sourceFeatureId: "doc-compress",
-            sourceLabel: `Compressed (${reductionLabel})`
+            sourceLabel: `Compressed (${safeLabel})`
           });
         }
 
@@ -1569,11 +1656,10 @@ const imageCompressFeature: Feature = {
 
           const reduction = Math.round((1 - resBlob.size / entry.file.size) * 100);
           const reductionLabel = reduction > 0 ? `-${reduction}%` : "same size";
-          const base = entry.file.name.replace(/\.[^/.]+$/, "");
-          const ext = targetMime === "image/webp" ? "webp" : targetMime === "image/jpeg" ? "jpg" : targetMime === "image/png" ? "png" : (entry.file.name.split(".").pop() ?? "jpg");
+          const ext = targetMime === "image/webp" ? "webp" : targetMime === "image/jpeg" ? "jpg" : targetMime === "image/png" ? "png" : fileExtension(entry.file.name, "jpg");
 
           outFiles.push({
-            name: `${base}-compressed.${ext}`,
+            name: `${baseName(entry.file.name)}-compressed.${ext}`,
             blob: resBlob,
             mime: resBlob.type || targetMime || entry.mime,
             sourceFeatureId: "image-compress",
@@ -1764,12 +1850,11 @@ const audioCompressFeature: Feature = {
 
           const reduction = Math.round((1 - res.blob.size / item.file.size) * 100);
           const reductionLabel = reduction > 0 ? `-${reduction}%` : "same size";
-          const base = item.file.name.replace(/\.[^/.]+$/, "");
 
           outFiles.push({
-            name: `${base}-compressed.mp3`,
+            name: `${baseName(item.file.name)}-compressed.${res.mime === "audio/wav" ? "wav" : "mp3"}`,
             blob: res.blob,
-            mime: "audio/mp3",
+            mime: res.mime,
             sourceFeatureId: "audio-compress",
             sourceLabel: `Compressed (${reductionLabel})`
           });
@@ -1960,11 +2045,10 @@ const videoCompressFeature: Feature = {
 
           const reduction = Math.round((1 - res.blob.size / item.file.size) * 100);
           const reductionLabel = reduction > 0 ? `-${reduction}%` : "same size";
-          const base = item.file.name.replace(/\.[^/.]+$/, "");
-          const ext = isGif ? "gif" : "webm";
+          const ext = res.mime.includes("webm") ? "webm" : isGif ? "gif" : fileExtension(item.file.name, "webm");
 
           outFiles.push({
-            name: `${base}-compressed.${ext}`,
+            name: `${baseName(item.file.name)}-compressed.${ext}`,
             blob: res.blob,
             mime: res.mime,
             sourceFeatureId: "video-compress",
@@ -2087,7 +2171,10 @@ export const mount = (root: HTMLElement): void => {
   };
 
   const consumeHandoff = async () => {
-    const incoming = takeHandoff("compress") || takeHandoff("pdf-compress");
+    const incoming = [
+      ...takeHandoff("compress"),
+      ...takeHandoff("pdf-compress")
+    ];
     if (incoming && incoming.length) {
       entries.length = 0;
       await addFiles(incoming, { busy: noopBusy });
@@ -2095,7 +2182,9 @@ export const mount = (root: HTMLElement): void => {
     }
   };
 
-  window.addEventListener(SAME_TOOL_EVENT, () => {
+  window.addEventListener(SAME_TOOL_EVENT, (e) => {
+    const featureId = (e as CustomEvent<{ featureId?: string }>).detail?.featureId;
+    if (featureId) shell.activate(featureId);
     void consumeHandoff();
   });
 
