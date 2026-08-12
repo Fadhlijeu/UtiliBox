@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { toolById } from "../src/config/tools";
+import { getNextPresetName, calculateEstimateForEntries } from "../src/tools/compress/index";
 
 describe("Compress Tool Suite, Hard Compress Engine & Target Size Limits", () => {
   it("registers generic Compress tool in tool registry", () => {
@@ -34,18 +35,16 @@ describe("Compress Tool Suite, Hard Compress Engine & Target Size Limits", () =>
   });
 
   it("recycles preset incremental numbers when presets are deleted", () => {
-    const { getNextPresetName } = require("../src/tools/compress/index");
-    
     // Preset #1 and #2 exist -> next should be Preset #3
     const p1 = [
-      { id: "p1", name: "Preset #1", mode: "target-size", qualityVal: 65, targetVal: 1, targetUnit: "MB", precision: "exact" },
-      { id: "p2", name: "Preset #2", mode: "target-size", qualityVal: 65, targetVal: 1, targetUnit: "MB", precision: "exact" }
+      { id: "p1", name: "Preset #1", mode: "target-size" as const, qualityVal: 65, targetVal: 1, targetUnit: "MB" as const, precision: "exact" as const },
+      { id: "p2", name: "Preset #2", mode: "target-size" as const, qualityVal: 65, targetVal: 1, targetUnit: "MB" as const, precision: "exact" as const }
     ];
     expect(getNextPresetName(p1)).toBe("Preset #3");
 
     // Preset #2 deleted -> next should recycle Preset #2
     const p2 = [
-      { id: "p1", name: "Preset #1", mode: "target-size", qualityVal: 65, targetVal: 1, targetUnit: "MB", precision: "exact" }
+      { id: "p1", name: "Preset #1", mode: "target-size" as const, qualityVal: 65, targetVal: 1, targetUnit: "MB" as const, precision: "exact" as const }
     ];
     expect(getNextPresetName(p2)).toBe("Preset #2");
 
@@ -54,8 +53,6 @@ describe("Compress Tool Suite, Hard Compress Engine & Target Size Limits", () =>
   });
 
   it("calculates file-aware multi-item estimator correctly with mixed presets", () => {
-    const { calculateEstimateForEntries } = require("../src/tools/compress/index");
-
     const dummyFile100MB = new File([new ArrayBuffer(100 * 1024 * 1024)], "file100.pdf", { type: "application/pdf" });
     const dummyFile50MB = new File([new ArrayBuffer(50 * 1024 * 1024)], "file50.pdf", { type: "application/pdf" });
     const dummyFile10MB = new File([new ArrayBuffer(10 * 1024 * 1024)], "file10.pdf", { type: "application/pdf" });

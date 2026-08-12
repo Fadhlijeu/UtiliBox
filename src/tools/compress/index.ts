@@ -67,7 +67,7 @@ export const calculateEstimateForEntries = (
   allPresets: PresetConfig[],
   globalMode: CompressMode,
   globalQualityVal: number,
-  globalTargetBytes: number | undefined,
+  globalTargetBytes: number | null | undefined,
   grayscaleVal: boolean = false
 ): { originalBytes: number; estimatedBytes: number } => {
   let originalBytes = 0;
@@ -2072,7 +2072,6 @@ export const mount = (root: HTMLElement): void => {
       onReset: () => {
         entries.length = 0;
         presets.length = 0;
-        nextPresetNumber = 1;
         notifyFileChange();
       }
     }
