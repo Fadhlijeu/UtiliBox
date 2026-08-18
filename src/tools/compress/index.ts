@@ -6,6 +6,7 @@ import { formatBytes, blobFromBytes } from "../../lib/files";
 import { takeHandoff } from "../../lib/handoff";
 import { SAME_TOOL_EVENT } from "../../components/output-panel";
 import { PDFDocument } from "pdf-lib";
+import imageCompression from "browser-image-compression";
 import type { Busy } from "../../components/busy";
 
 let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
@@ -373,8 +374,8 @@ const compressPdfTargetMatch = async (
   return bestBytes.length < pdfBytes.length ? bestBytes : pdfBytes;
 };
 
-// ── Engine 3: Image Compressor (Community-Standard Canvas Pipeline) ──
-const compressImageFile = async (
+// ── Engine 3: Image Compressor (Powered by browser-image-compression) ──
+const compressImageCanvasFallback = async (
   file: File,
   quality: number,
   scale: number,
@@ -389,7 +390,6 @@ const compressImageFile = async (
       let width = Math.max(1, Math.round(img.width * scale));
       let height = Math.max(1, Math.round(img.height * scale));
 
-      // Community constraint: clamp maximum texture dimensions
       const maxDim = 4096;
       if (width > maxDim || height > maxDim) {
         if (width > height) {
@@ -433,51 +433,54 @@ const compressImageFile = async (
   });
 };
 
+const compressImageFile = async (
+  file: File,
+  quality: number,
+  scale: number,
+  targetMime: string
+): Promise<Blob> => {
+  try {
+    const defaultMaxDim = scale < 1.0 ? Math.round(3840 * scale) : undefined;
+    const options = {
+      maxSizeMB: Math.max(0.01, (file.size / (1024 * 1024)) * quality),
+      maxWidthOrHeight: defaultMaxDim,
+      useWebWorker: true,
+      initialQuality: Math.max(0.05, Math.min(1.0, quality)),
+      fileType: targetMime || (file.type === "image/png" ? "image/webp" : file.type || "image/jpeg")
+    };
+    const compressed = await imageCompression(file, options);
+    return compressed.size <= file.size ? compressed : file;
+  } catch {
+    return await compressImageCanvasFallback(file, quality, scale, targetMime);
+  }
+};
+
 const compressImageTargetMatch = async (
   file: File,
-  data: Uint8Array,
+  _data: Uint8Array,
   targetBytes: number,
   precision: TargetPrecision = "exact"
 ): Promise<Blob> => {
-  if (data.length <= targetBytes) {
+  if (file.size <= targetBytes) {
     return file;
   }
 
-  let minQ = 0.08;
-  let maxQ = 0.95;
-  let bestBlob: Blob = file;
-  let bestDiff = Infinity;
-  let currentScale = 1.0;
-
+  const targetMB = targetBytes / (1024 * 1024);
   const targetMime = file.type === "image/png" ? "image/webp" : file.type || "image/jpeg";
 
-  // Multi-pass binary search (browser-image-compression algorithm)
-  for (let step = 0; step < 7; step++) {
-    const midQ = (minQ + maxQ) / 2;
-    const candidate = await compressImageFile(file, midQ, currentScale, targetMime);
-
-    if (candidate.size <= targetBytes) {
-      const diff = targetBytes - candidate.size;
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        bestBlob = candidate;
-      }
-      if (precision === "exact" && diff < targetBytes * 0.05) {
-        return candidate;
-      }
-      minQ = midQ + 0.03;
-    } else {
-      maxQ = midQ - 0.03;
-    }
-
-    if (minQ > maxQ && bestBlob.size > targetBytes && currentScale > 0.3) {
-      currentScale *= 0.8;
-      minQ = 0.15;
-      maxQ = 0.9;
-    }
+  try {
+    const options = {
+      maxSizeMB: precision === "exact" ? Math.max(0.01, targetMB * 0.98) : targetMB,
+      maxWidthOrHeight: 3840,
+      useWebWorker: true,
+      fileType: targetMime,
+      alwaysKeepResolution: false
+    };
+    const compressed = await imageCompression(file, options);
+    return (compressed.size <= targetBytes || compressed.size <= file.size) ? compressed : file;
+  } catch {
+    return await compressImageCanvasFallback(file, 0.5, 0.8, targetMime);
   }
-
-  return (bestBlob.size <= targetBytes || bestBlob.size <= file.size) ? bestBlob : file;
 };
 
 // ── Engine 4: Audio Compressor ──────────────────────────────────
