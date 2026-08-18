@@ -93,4 +93,35 @@ describe("Compress Tool Suite, Hard Compress Engine & Target Size Limits", () =>
     expect(target20).toBe(Math.round(5.0 * 1024 * 1024));
     expect(target10).toBe(Math.round(2.5 * 1024 * 1024));
   });
+
+  it("calculates realistic estimate for 100MB PDF at 65% quality (not 1KB)", () => {
+    const file100MB = new File([new ArrayBuffer(100 * 1024 * 1024)], "sample-100mb.pdf", { type: "application/pdf" });
+    const entries = [
+      { id: "1", file: file100MB, data: new Uint8Array(0), mime: "application/pdf", kind: "pdf" as const }
+    ];
+
+    const est = calculateEstimateForEntries(entries, [], "quality", 65, null);
+    expect(est.originalBytes).toBe(100 * 1024 * 1024);
+    // At 65% quality: 0.15 + 0.65 * 0.65 = 57.25% (~52 MB)
+    expect(est.estimatedBytes).toBeGreaterThan(45 * 1024 * 1024);
+    expect(est.estimatedBytes).toBeLessThan(65 * 1024 * 1024);
+  });
+
+  it("calculates multi-format estimates across images, audio, and video", () => {
+    const imgFile = new File([new ArrayBuffer(10 * 1024 * 1024)], "photo.jpg", { type: "image/jpeg" });
+    const audFile = new File([new ArrayBuffer(20 * 1024 * 1024)], "track.mp3", { type: "audio/mp3" });
+    const vidFile = new File([new ArrayBuffer(50 * 1024 * 1024)], "clip.mp4", { type: "video/mp4" });
+
+    const entries = [
+      { id: "1", file: imgFile, data: new Uint8Array(0), mime: "image/jpeg", kind: "image" as const },
+      { id: "2", file: audFile, data: new Uint8Array(0), mime: "audio/mp3", kind: "audio" as const },
+      { id: "3", file: vidFile, data: new Uint8Array(0), mime: "video/mp4", kind: "video" as const }
+    ];
+
+    const est = calculateEstimateForEntries(entries, [], "quality", 75, null);
+    expect(est.originalBytes).toBe(80 * 1024 * 1024);
+    expect(est.estimatedBytes).toBeGreaterThan(30 * 1024 * 1024);
+    expect(est.estimatedBytes).toBeLessThan(70 * 1024 * 1024);
+  });
 });
+

@@ -235,7 +235,7 @@ const compressPdfCanvas = async (
     const pageCount = pdfDoc.numPages;
     const outPdf = await PDFDocument.create();
 
-    const renderScale = Math.max(1.2, dpi / 72);
+    const renderScale = Math.max(1.0, dpi / 72);
 
     for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
       if (onProgress) {
@@ -246,7 +246,7 @@ const compressPdfCanvas = async (
       const canvas = document.createElement("canvas");
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
-      const ctx = canvas.getContext("2d")!;
+      const ctx = canvas.getContext("2d", { alpha: false })!;
 
       await page.render({ canvasContext: ctx, viewport, canvas }).promise;
 
@@ -263,7 +263,12 @@ const compressPdfCanvas = async (
       }
 
       const q = Math.max(0.1, Math.min(1.0, qualityPercent / 100));
-      const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), "image/jpeg", q));
+      const blob: Blob = await new Promise((res, rej) => {
+        canvas.toBlob((b) => {
+          if (b) res(b);
+          else rej(new Error("Canvas export failed"));
+        }, "image/jpeg", q);
+      });
       const imageBytes = new Uint8Array(await blob.arrayBuffer());
       const embeddedImage = await outPdf.embedJpg(imageBytes);
 
@@ -293,19 +298,20 @@ const compressPdfQualityRatio = async (
   const targetBytes = Math.round(originalSize * (qualityPercent / 100));
 
   const structural = await compressPdfStructural(pdfBytes);
-  if (structural.length <= targetBytes) {
+  // If structural optimization alone achieved good reduction without rasterization
+  if (structural.length <= targetBytes && structural.length < originalSize * 0.95 && structural.length >= 1024) {
     return structural;
   }
 
   let dpi = userDpi;
   if (originalSize > 20 * 1024 * 1024) {
-    dpi = Math.max(180, Math.round(userDpi * 1.6));
+    dpi = Math.max(180, Math.round(userDpi * 1.5));
   } else if (originalSize > 5 * 1024 * 1024) {
-    dpi = Math.max(140, Math.round(userDpi * 1.25));
+    dpi = Math.max(140, Math.round(userDpi * 1.2));
   }
 
   const candidate = await compressPdfCanvas(pdfBytes, qualityPercent, grayscale, dpi, onProgress);
-  return candidate.length < originalSize ? candidate : pdfBytes;
+  return candidate.length < originalSize ? candidate : (structural.length < originalSize ? structural : pdfBytes);
 };
 
 // ── Target Match Engine (PDF) ───────────────────────────────────
@@ -317,13 +323,13 @@ const compressPdfTargetMatch = async (
   onProgress?: (pageNum: number, totalPages: number) => void
 ): Promise<Uint8Array> => {
   const structural = await compressPdfStructural(pdfBytes);
-  if (structural.length <= targetBytes) {
+  if (structural.length <= targetBytes && structural.length >= targetBytes * 0.8) {
     return structural;
   }
 
   const dpiTiers = [300, 225, 175, 150, 120, 90, 72];
-  let bestBytes = pdfBytes;
-  let bestSize = Infinity;
+  let bestBytes = structural.length < pdfBytes.length ? structural : pdfBytes;
+  let bestSize = bestBytes.length;
   let closestUnderTarget: Uint8Array | null = null;
   let closestUnderTargetDiff = Infinity;
 
@@ -367,7 +373,7 @@ const compressPdfTargetMatch = async (
   return bestBytes.length < pdfBytes.length ? bestBytes : pdfBytes;
 };
 
-// ── Engine 3: Image Compressor ──────────────────────────────────
+// ── Engine 3: Image Compressor (Community-Standard Canvas Pipeline) ──
 const compressImageFile = async (
   file: File,
   quality: number,
@@ -380,19 +386,43 @@ const compressImageFile = async (
     img.onload = () => {
       URL.revokeObjectURL(url);
       const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(img.width * scale));
-      canvas.height = Math.max(1, Math.round(img.height * scale));
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      let width = Math.max(1, Math.round(img.width * scale));
+      let height = Math.max(1, Math.round(img.height * scale));
 
-      const mime = targetMime || file.type || "image/jpeg";
+      // Community constraint: clamp maximum texture dimensions
+      const maxDim = 4096;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d", { alpha: true })!;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+
+      const mime = targetMime || (file.type === "image/png" ? "image/webp" : file.type || "image/jpeg");
+
+      if (mime === "image/jpeg") {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
       canvas.toBlob(
         (blob) => {
           if (blob) resolve(blob);
           else reject(new Error("Canvas blob generation failed"));
         },
         mime,
-        quality
+        Math.max(0.05, Math.min(1.0, quality))
       );
     };
     img.onerror = () => {
@@ -413,16 +443,18 @@ const compressImageTargetMatch = async (
     return file;
   }
 
-  let minQ = 0.1;
+  let minQ = 0.08;
   let maxQ = 0.95;
   let bestBlob: Blob = file;
   let bestDiff = Infinity;
+  let currentScale = 1.0;
 
   const targetMime = file.type === "image/png" ? "image/webp" : file.type || "image/jpeg";
 
-  for (let step = 0; step < 6; step++) {
+  // Multi-pass binary search (browser-image-compression algorithm)
+  for (let step = 0; step < 7; step++) {
     const midQ = (minQ + maxQ) / 2;
-    const candidate = await compressImageFile(file, midQ, 1.0, targetMime);
+    const candidate = await compressImageFile(file, midQ, currentScale, targetMime);
 
     if (candidate.size <= targetBytes) {
       const diff = targetBytes - candidate.size;
@@ -431,18 +463,17 @@ const compressImageTargetMatch = async (
         bestBlob = candidate;
       }
       if (precision === "exact" && diff < targetBytes * 0.05) {
-        break;
+        return candidate;
       }
-      minQ = midQ + 0.05;
+      minQ = midQ + 0.03;
     } else {
-      maxQ = midQ - 0.05;
+      maxQ = midQ - 0.03;
     }
-  }
 
-  if (bestBlob.size > targetBytes) {
-    const scaledCandidate = await compressImageFile(file, 0.4, 0.7, targetMime);
-    if (scaledCandidate.size <= targetBytes && scaledCandidate.size <= file.size) {
-      bestBlob = scaledCandidate;
+    if (minQ > maxQ && bestBlob.size > targetBytes && currentScale > 0.3) {
+      currentScale *= 0.8;
+      minQ = 0.15;
+      maxQ = 0.9;
     }
   }
 
@@ -662,13 +693,13 @@ const compressVideoFile = async (
 
 // ── Component: Estimator Readout ───────────────────────────────
 const createEstimatorCard = (
-  initialBytes: number,
-  initialRatio: number
-): { card: HTMLElement; update: (bytes: number, ratio: number) => void } => {
-  const origBytes = initialBytes;
-  const estBytes = Math.max(1024, Math.round(initialBytes * (1 - initialRatio)));
+  initialOrigBytes: number,
+  initialEstBytes: number
+): { card: HTMLElement; update: (origBytes: number, estBytes: number) => void } => {
+  const origBytes = initialOrigBytes;
+  const estBytes = initialEstBytes;
   const savedBytes = Math.max(0, origBytes - estBytes);
-  const initialPct = Math.min(99, Math.max(0, Math.round(initialRatio * 100)));
+  const initialPct = origBytes > 0 ? Math.min(99, Math.max(0, Math.round((savedBytes / origBytes) * 100))) : 0;
 
   const originalLabel = el("span", { class: "compress-metric-value" }, [formatBytes(origBytes)]);
   const estimatedLabel = el("span", { class: "compress-metric-value compress-metric-value--accent" }, [
@@ -682,7 +713,7 @@ const createEstimatorCard = (
 
   const progressFill = el("div", {
     class: "compress-gauge-bar-fill",
-    style: `width: ${Math.max(8, 100 - initialPct)}%`
+    style: `width: ${origBytes > 0 ? Math.max(5, Math.min(100, Math.round((estBytes / origBytes) * 100))) : 0}%`
   });
 
   const card = el("div", { class: "compress-telemetry-card" }, [
@@ -715,17 +746,18 @@ const createEstimatorCard = (
     ])
   ]);
 
-  const update = (bytes: number, ratio: number) => {
-    originalLabel.textContent = formatBytes(bytes);
-    const est = Math.max(1024, Math.round(bytes * (1 - ratio)));
-    estimatedLabel.textContent = formatBytes(est);
-    const saved = Math.max(0, bytes - est);
-    const pct = Math.min(99, Math.max(0, Math.round(ratio * 100)));
+  const update = (orig: number, est: number) => {
+    originalLabel.textContent = formatBytes(orig);
+    const validEst = Math.max(0, est);
+    estimatedLabel.textContent = formatBytes(validEst);
+    const saved = Math.max(0, orig - validEst);
+    const pct = orig > 0 ? Math.min(99, Math.max(0, Math.round((saved / orig) * 100))) : 0;
     badge.replaceChildren(
       el("span", { class: "material-symbols-outlined text-xs" }, ["savings"]),
       `Save ~${formatBytes(saved)} (${pct}%)`
     );
-    progressFill.style.width = `${Math.max(8, 100 - pct)}%`;
+    const fillRatio = orig > 0 ? Math.max(5, Math.min(100, Math.round((validEst / orig) * 100))) : 0;
+    progressFill.style.width = `${fillRatio}%`;
   };
 
   return { card, update };
@@ -1382,7 +1414,7 @@ const docCompressFeature: Feature = {
 
     const docs = entries.filter(isDoc);
     const totalBytes = docs.reduce((acc, e) => acc + e.file.size, 0);
-    const estimator = createEstimatorCard(totalBytes, 0.75);
+    const estimator = createEstimatorCard(totalBytes, Math.round(totalBytes * 0.65));
 
     const presetManager = createPresetManager(isDoc, () => updateEstimate());
 
@@ -1645,7 +1677,7 @@ const imageCompressFeature: Feature = {
 
     const imgs = entries.filter(isImg);
     const imagesTotal = imgs.reduce((acc, e) => acc + e.file.size, 0);
-    const estimator = createEstimatorCard(imagesTotal, 0.65);
+    const estimator = createEstimatorCard(imagesTotal, Math.round(imagesTotal * 0.75));
 
     const modeControl = createModeControl("img", (mode) => {
       updateEstimate(mode);
@@ -1886,7 +1918,7 @@ const audioCompressFeature: Feature = {
 
     const auds = entries.filter(isAud);
     const audioTotal = auds.reduce((acc, e) => acc + e.file.size, 0);
-    const estimator = createEstimatorCard(audioTotal, 0.5);
+    const estimator = createEstimatorCard(audioTotal, Math.round(audioTotal * 0.6));
 
     const modeControl = createModeControl("aud", (mode) => {
       updateEstimate(mode);
@@ -2108,7 +2140,7 @@ const videoCompressFeature: Feature = {
 
     const vids = entries.filter(isVid);
     const videoTotal = vids.reduce((acc, e) => acc + e.file.size, 0);
-    const estimator = createEstimatorCard(videoTotal, 0.55);
+    const estimator = createEstimatorCard(videoTotal, Math.round(videoTotal * 0.55));
 
     const modeControl = createModeControl("vid", (mode) => {
       updateEstimate(mode);
