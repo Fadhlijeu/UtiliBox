@@ -92,6 +92,10 @@ export const loadToolModule = async (
     case "compress":
     case "pdf-compress":
       return import("../tools/compress/index");
+    case "pdf-convert":
+    case "convert":
+    case "document-convert":
+      return import("../tools/convert/index");
     default:
       throw new Error("not-implemented: " + id);
   }

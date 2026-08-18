@@ -30,7 +30,7 @@ export interface ZipEntry {
   data: Uint8Array;
 }
 
-const buildZip = (entries: ZipEntry[]): Uint8Array => {
+export const buildZip = (entries: ZipEntry[]): Uint8Array => {
   const chunks: Uint8Array[] = [];
   const central: Uint8Array[] = [];
   let offset = 0;
@@ -91,6 +91,89 @@ const buildZip = (entries: ZipEntry[]): Uint8Array => {
     pos += c.length;
   }
   return out;
+};
+
+/** Decompress raw deflate stream using browser Web Streams API */
+export const decompressRawDeflate = async (compressed: Uint8Array): Promise<Uint8Array> => {
+  if (typeof DecompressionStream !== "undefined") {
+    try {
+      const ds = new DecompressionStream("deflate-raw");
+      const writer = ds.writable.getWriter();
+      void writer.write(new Uint8Array(compressed.buffer as ArrayBuffer));
+      void writer.close();
+      const response = new Response(ds.readable);
+      return new Uint8Array(await response.arrayBuffer());
+    } catch {
+      // Fallback
+    }
+  }
+  return compressed;
+};
+
+/** Parse and extract all entries from a standard ZIP buffer */
+export const readZipEntries = async (data: Uint8Array): Promise<ZipEntry[]> => {
+  const entries: ZipEntry[] = [];
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  let pos = 0;
+
+  while (pos + 30 <= data.length) {
+    const sig = dv.getUint32(pos, true);
+    if (sig !== 0x04034b50) {
+      break;
+    }
+    const method = dv.getUint16(pos + 8, true);
+    let compSize = dv.getUint32(pos + 18, true);
+    const nameLen = dv.getUint16(pos + 26, true);
+    const extraLen = dv.getUint16(pos + 28, true);
+
+    const nameBytes = data.subarray(pos + 30, pos + 30 + nameLen);
+    const name = new TextDecoder().decode(nameBytes);
+    const dataOffset = pos + 30 + nameLen + extraLen;
+
+    // Handle data descriptor (bit 3 set in flags)
+    const flags = dv.getUint16(pos + 6, true);
+    if ((flags & 0x0008) !== 0 && compSize === 0) {
+      // Find next signature to determine size
+      let nextSigPos = dataOffset;
+      while (nextSigPos + 4 <= data.length) {
+        const nextSig = dv.getUint32(nextSigPos, true);
+        if (nextSig === 0x04034b50 || nextSig === 0x02014b50 || nextSig === 0x08074b50) {
+          break;
+        }
+        nextSigPos++;
+      }
+      compSize = nextSigPos - dataOffset;
+    }
+
+    const payload = data.subarray(dataOffset, dataOffset + compSize);
+    let uncompressedData: Uint8Array;
+
+    if (method === 0) {
+      uncompressedData = payload.slice();
+    } else if (method === 8) {
+      uncompressedData = await decompressRawDeflate(payload);
+    } else {
+      uncompressedData = payload.slice();
+    }
+
+    entries.push({ name, data: uncompressedData });
+    pos = dataOffset + compSize;
+
+    // Skip optional data descriptor if present
+    if (pos + 4 <= data.length && dv.getUint32(pos, true) === 0x08074b50) {
+      pos += 16;
+    }
+  }
+
+  return entries;
+};
+
+/** Extract a specific text file from a ZIP archive */
+export const readZipTextFile = async (data: Uint8Array, targetPath: string): Promise<string | null> => {
+  const entries = await readZipEntries(data);
+  const found = entries.find((e) => e.name === targetPath || e.name.toLowerCase() === targetPath.toLowerCase());
+  if (!found) return null;
+  return new TextDecoder().decode(found.data);
 };
 
 /** Zip a list of named blobs (STORE). Rejects reserved names for safety. */

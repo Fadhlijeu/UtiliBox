@@ -7,7 +7,6 @@ import { takeHandoff } from "../../lib/handoff";
 import { SAME_TOOL_EVENT } from "../../components/output-panel";
 import { PDFDocument } from "pdf-lib";
 import imageCompression from "browser-image-compression";
-import type { Busy } from "../../components/busy";
 
 let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 const getPdfJs = (): Promise<typeof import("pdfjs-dist")> => {
@@ -153,6 +152,7 @@ export const calculateEstimateForEntries = (
 };
 
 let notifyActivity: (() => void) | null = null;
+export const setNotifyActivity = (fn: (() => void) | null) => { notifyActivity = fn; };
 const fileChangeListeners: Array<() => void> = [];
 
 const notifyFileChange = () => {
@@ -2349,44 +2349,45 @@ const dropzoneEl = (
 // ── Tool Entry ────────────────────────────────────────────────
 export const mount = (root: HTMLElement): void => {
   clear(root);
-  const shell = ToolShell(
-    "Compress",
-    [docCompressFeature, imageCompressFeature, audioCompressFeature, videoCompressFeature],
-    {
-      onReset: () => {
-        entries.length = 0;
-        presets.length = 0;
-        notifyFileChange();
-      }
-    }
-  );
-  notifyActivity = shell.activity;
-  root.append(shell.node);
 
-  const noopBusy: Busy = {
-    spin: () => {},
-    progress: () => {},
-    done: () => {},
-    node: el("div")
-  };
+  const maintenanceCard = el("div", { class: "tool-maintenance-card" }, [
+    el("div", { class: "tool-maintenance-icon" }, [
+      el("span", { class: "material-symbols-outlined" }, ["engineering"])
+    ]),
+    el("div", { class: "tool-maintenance-badge" }, [
+      el("span", { class: "material-symbols-outlined text-xs" }, ["construction"]),
+      "Under Scheduled Maintenance"
+    ]),
+    el("h2", { class: "tool-maintenance-title" }, ["Compress Tool Under Maintenance"]),
+    el("p", { class: "tool-maintenance-desc" }, [
+      "Fitur kompresi file sedang dalam proses peningkatan algoritma dan maintenance sistem. Untuk sementara waktu fitur ini tidak dapat digunakan. Silakan gunakan fitur UtiliBox lainnya seperti Convert Document."
+    ]),
+    el("div", { class: "tool-maintenance-actions" }, [
+      el("a", { class: "btn btn--primary", href: "#/tool/pdf-convert" }, [
+        el("span", { class: "material-symbols-outlined" }, ["swap_horiz"]),
+        "Buka Convert Document"
+      ]),
+      el("a", { class: "btn btn--ghost", href: "#/" }, [
+        el("span", { class: "material-symbols-outlined" }, ["home"]),
+        "Kembali ke Beranda"
+      ])
+    ])
+  ]);
 
-  const consumeHandoff = async () => {
-    const incoming = [
-      ...takeHandoff("compress"),
-      ...takeHandoff("pdf-compress")
-    ];
-    if (incoming && incoming.length) {
-      entries.length = 0;
-      await addFiles(incoming, { busy: noopBusy });
-      toast(`${incoming.length} file(s) loaded`, "success");
-    }
-  };
+  const container = el("div", { class: "tool-maintenance-container" }, [
+    maintenanceCard
+  ]);
 
-  window.addEventListener(SAME_TOOL_EVENT, (e) => {
-    const featureId = (e as CustomEvent<{ featureId?: string }>).detail?.featureId;
-    if (featureId) shell.activate(featureId);
-    void consumeHandoff();
-  });
-
-  void consumeHandoff();
+  root.append(container);
 };
+
+export const COMPRESS_FEATURES = {
+  ToolShell,
+  takeHandoff,
+  SAME_TOOL_EVENT,
+  docCompressFeature,
+  imageCompressFeature,
+  audioCompressFeature,
+  videoCompressFeature
+};
+
